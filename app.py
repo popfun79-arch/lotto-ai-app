@@ -64,7 +64,7 @@ def predict_prob():
     return sorted(probs, key=lambda x: x[1], reverse=True)
 
 # ------------------------
-# 기본 필터
+# 필터
 # ------------------------
 def basic_filter(combo):
     if max(combo)-min(combo) == 5:
@@ -75,7 +75,7 @@ def basic_filter(combo):
     return True
 
 # ------------------------
-# 점수 요소들
+# 점수 함수
 # ------------------------
 def balance_score(combo):
     score = 0
@@ -96,10 +96,7 @@ def neighbor_score(combo, last):
 def hot_cold_score(combo, freq):
     hot = sorted(freq, key=freq.get, reverse=True)[:10]
     cold = sorted(freq, key=freq.get)[:10]
-    score = 0
-    score += sum(n in hot for n in combo)*3
-    score += sum(n in cold for n in combo)*2
-    return score
+    return sum(n in hot for n in combo)*3 + sum(n in cold for n in combo)*2
 
 def skip_score(combo, df):
     last_seen = {}
@@ -135,7 +132,7 @@ def last_digit_score(combo, df):
     return sum(n%10 in top for n in combo)*3
 
 # ------------------------
-# 🔥 Skip 패턴 (핵심)
+# Skip 패턴 핵심
 # ------------------------
 def compute_skip_map(df):
     last_seen={}
@@ -163,6 +160,84 @@ def skip_pattern_score(combo, skip_map, low, high):
     if low<=s<=high:
         return 15
     return 0
+
+# ------------------------
+# 설명 + 등급
+# ------------------------
+def explain_combo(combo, df, skip_map, low, high, pair_matrix):
+
+    reasons = []
+
+    odd = sum(n%2 for n in combo)
+    if odd in [2,3,4]:
+        reasons.append("✔ 홀짝 균형")
+
+    if 100 <= sum(combo) <= 180:
+        reasons.append("✔ 합계 안정")
+
+    last = df.iloc[-1].values
+    neighbors = []
+    for n in last:
+        neighbors += [n-1,n+1]
+    if sum(n in neighbors for n in combo) >= 1:
+        reasons.append("✔ 이웃 숫자 포함")
+
+    freq = Counter()
+    for row in df.values:
+        for n in row:
+            freq[n]+=1
+
+    hot = sorted(freq, key=freq.get, reverse=True)[:10]
+    cold = sorted(freq, key=freq.get)[:10]
+
+    if sum(n in hot for n in combo) >= 2:
+        reasons.append("✔ Hot 번호 포함")
+    if sum(n in cold for n in combo) >= 1:
+        reasons.append("✔ Cold 반등")
+
+    skip_s = sum(skip_map[n] for n in combo)
+    if low <= skip_s <= high:
+        reasons.append("✔ Skip 균형")
+
+    pair_strength = sum(pair_matrix.get(tuple(sorted((a,b))),0)
+                        for a,b in combinations(combo,2))
+    if pair_strength > 15:
+        reasons.append("✔ 동반 출현 강함")
+
+    return reasons
+
+def grade_combo(score):
+    if score > 80: return "🔥 S급"
+    elif score > 60: return "⭐ A급"
+    elif score > 40: return "👍 B급"
+    else: return "⚪ C급"
+
+# ------------------------
+# 스타일
+# ------------------------
+def style_numbers(combo):
+    html = ""
+    for n in combo:
+        if n<=10: color="#fbc400"
+        elif n<=20: color="#69c8f2"
+        elif n<=30: color="#ff7272"
+        elif n<=40: color="#aaa"
+        else: color="#b0d840"
+
+        html += f"""
+        <span style="
+        display:inline-block;
+        background:{color};
+        padding:10px;
+        margin:5px;
+        border-radius:50%;
+        width:40px;
+        text-align:center;
+        font-weight:bold;">
+        {n}
+        </span>
+        """
+    return html
 
 # ------------------------
 # 최종 fitness
@@ -215,17 +290,34 @@ def generate_best(prob):
 # UI
 # ------------------------
 if st.button("🚀 AI 초강력 추천"):
+
     prob = predict_prob()
+    prob_dict = dict(prob)
     best = generate_best(prob)
 
-    st.subheader("🔥 추천 번호")
-    for i,b in enumerate(best,1):
-        st.write(f"{i}. {b}")
+    st.subheader("🎯 AI 추천 결과")
 
+    for i, combo in enumerate(best,1):
+
+        score = fitness(combo, prob_dict)
+        grade = grade_combo(score)
+
+        reasons = explain_combo(
+            combo, df, skip_map, low, high, pair_matrix
+        )
+
+        st.markdown(f"## {i}번 조합 {grade}")
+        st.markdown(style_numbers(combo), unsafe_allow_html=True)
+        st.write(f"💯 점수: {round(score,1)}")
+
+        for r in reasons:
+            st.write(r)
+
+        st.markdown("---")
+
+    # 📊 그래프
     results = [len(set(b)&set(row)) for b in best for row in df.values]
 
-    st.subheader("📊 정확도")
-    st.write(f"평균 적중: {round(np.mean(results),2)}")
-
+    st.subheader("📊 적중 분석")
     fig = px.histogram(results, nbins=10, title="적중 분포")
     st.plotly_chart(fig, use_container_width=True)
