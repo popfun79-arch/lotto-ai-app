@@ -1,90 +1,93 @@
+# 1️⃣ 라이브러리
 import streamlit as st
 import pandas as pd
 import numpy as np
 import random
-from collections import Counter
-import lightgbm as lgb
+from lightgbm import LGBMClassifier
 
-st.title("🎯 로또 AI 추천")
+# 2️⃣ UI 제목
+st.title("🎯 로또 AI 추천 시스템")
 
-uploaded_file = st.file_uploader("CSV 업로드", type=["csv"])
+# 3️⃣ 데이터 로드
+def load_data():
+    data = [
+        [9,18,21,27,44,45],
+        [3,7,11,12,20,27],
+        [7,8,10,12,34,44],
+        [13,14,15,24,31,34],
+        [12,16,20,23,38,40]
+    ]
+    return pd.DataFrame(data, columns=['n1','n2','n3','n4','n5','n6'])
 
-def load_data(file):
-    df = pd.read_csv(file)
-    return df[['n1','n2','n3','n4','n5','n6']].values.tolist()
+df = load_data()
 
-def build_features(history, window=20):
+# 4️⃣ 모델 학습
+def train_model(df):
     X, y = [], []
+    for row in df.values:
+        for n in range(1,46):
+            X.append([n])
+            y.append(1 if n in row else 0)
 
-    for i in range(window, len(history)):
-        past = history[i-window:i]
-        current = set(history[i])
-        freq = Counter(sum(past, []))
-
-        for num in range(1,46):
-            f = freq[num]
-            r5 = sum(num in h for h in past[-5:])
-            r10 = sum(num in h for h in past[-10:])
-
-            gap = 0
-            for j in range(len(past)-1, -1, -1):
-                if num in past[j]:
-                    gap = len(past) - j
-                    break
-
-            X.append([num, f, r5, r10, gap])
-            y.append(1 if num in current else 0)
-
-    return np.array(X), np.array(y)
-
-def train_model(X, y):
-    model = lgb.LGBMClassifier(n_estimators=200)
-    model.fit(X, y)
+    model = LGBMClassifier()
+    model.fit(X,y)
     return model
 
-def predict_probs(model, history):
-    past = history[-20:]
-    freq = Counter(sum(past, []))
+model = train_model(df)
 
-    features = []
+# 5️⃣ 확률 예측
+def predict_prob():
+    probs = []
+    for n in range(1,46):
+        p = model.predict_proba([[n]])[0][1]
+        probs.append((n,p))
+    return sorted(probs, key=lambda x: x[1], reverse=True)
 
-    for num in range(1,46):
-        f = freq[num]
-        r5 = sum(num in h for h in past[-5:])
-        r10 = sum(num in h for h in past[-10:])
+# 6️⃣ GA 알고리즘
+def fitness(combo, prob_dict):
+    return sum(prob_dict[n] for n in combo)
 
-        gap = 0
-        for j in range(len(past)-1, -1, -1):
-            if num in past[j]:
-                gap = len(past) - j
-                break
+def generate_best(prob):
+    prob_dict = dict(prob)
+    population = [sorted(random.sample(range(1,46),6)) for _ in range(50)]
 
-        features.append([num, f, r5, r10, gap])
+    for _ in range(10):
+        population = sorted(population, key=lambda x: fitness(x, prob_dict), reverse=True)
+        population = population[:20]
 
-    probs = model.predict_proba(features)[:,1]
-    return {i+1: probs[i] for i in range(45)}
+        new_pop = population.copy()
+        while len(new_pop) < 50:
+            a, b = random.sample(population, 2)
+            child = sorted(list(set(a[:3] + b[3:])))
+            while len(child) < 6:
+                child.append(random.randint(1,45))
+            child = sorted(child[:6])
+            new_pop.append(child)
 
-def generate_combos(prob_map):
-    nums = sorted(prob_map, key=prob_map.get, reverse=True)[:20]
-    results = []
-    for _ in range(5):
-        results.append(sorted(random.sample(nums,6)))
-    return results
+        population = new_pop
 
-if uploaded_file:
-    history = load_data(uploaded_file)
+    return population[:5]
 
-    if st.button("🚀 추천 생성"):
-        X, y = build_features(history)
-        model = train_model(X, y)
+# 7️⃣ 평가 (백테스트)
+def evaluate(combo, history):
+    score = 0
+    for h in history.values:
+        score += len(set(combo) & set(h))
+    return score
 
-        prob_map = predict_probs(model, history)
+# 8️⃣ UI 설정
+st.sidebar.title("⚙ 설정")
+num_sets = st.sidebar.slider("추천 개수", 1, 10, 5)
 
-        st.subheader("🔥 TOP 번호")
-        for k,v in sorted(prob_map.items(), key=lambda x:x[1], reverse=True)[:10]:
-            st.write(k, round(v,4))
+# 9️⃣ 실행 버튼 (핵심)
+if st.button("🚀 AI 초강력 추천"):
+    prob = predict_prob()
+    best = generate_best(prob)
 
-        st.subheader("🎯 추천 조합")
-        combos = generate_combos(prob_map)
-        for i,c in enumerate(combos):
-            st.write(i+1, c)
+    st.subheader("🔥 추천 번호")
+    for i, b in enumerate(best[:num_sets],1):
+        st.write(f"{i}. {b}")
+
+    st.subheader("📊 백테스트")
+    for b in best[:num_sets]:
+        st.write(f"{b} → 점수: {evaluate(b, df)}")
