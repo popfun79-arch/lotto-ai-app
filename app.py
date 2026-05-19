@@ -1,14 +1,16 @@
-# 1️⃣ 라이브러리
 import streamlit as st
 import pandas as pd
 import numpy as np
 import random
 from lightgbm import LGBMClassifier
+import matplotlib.pyplot as plt
+from collections import Counter
 
-# 2️⃣ UI 제목
 st.title("🎯 로또 AI 추천 시스템")
 
-# 3️⃣ 데이터 로드
+# ------------------------
+# 데이터
+# ------------------------
 def load_data():
     data = [
         [9,18,21,27,44,45],
@@ -21,7 +23,9 @@ def load_data():
 
 df = load_data()
 
-# 4️⃣ 모델 학습
+# ------------------------
+# 모델
+# ------------------------
 def train_model(df):
     X, y = [], []
     for row in df.values:
@@ -35,7 +39,6 @@ def train_model(df):
 
 model = train_model(df)
 
-# 5️⃣ 확률 예측
 def predict_prob():
     probs = []
     for n in range(1,46):
@@ -43,7 +46,9 @@ def predict_prob():
         probs.append((n,p))
     return sorted(probs, key=lambda x: x[1], reverse=True)
 
-# 6️⃣ GA 알고리즘
+# ------------------------
+# GA
+# ------------------------
 def fitness(combo, prob_dict):
     return sum(prob_dict[n] for n in combo)
 
@@ -68,26 +73,70 @@ def generate_best(prob):
 
     return population[:5]
 
-# 7️⃣ 평가 (백테스트)
-def evaluate(combo, history):
-    score = 0
-    for h in history.values:
-        score += len(set(combo) & set(h))
-    return score
+# ------------------------
+# 백테스트
+# ------------------------
+def backtest_model(df, trials=30):
+    results = []
 
-# 8️⃣ UI 설정
-st.sidebar.title("⚙ 설정")
-num_sets = st.sidebar.slider("추천 개수", 1, 10, 5)
+    for _ in range(trials):
+        prob = predict_prob()
+        combos = generate_best(prob)
 
-# 9️⃣ 실행 버튼 (핵심)
+        for combo in combos:
+            score = 0
+            for row in df.values:
+                score += len(set(combo) & set(row))
+
+            avg_score = score / len(df)
+            results.append(avg_score)
+
+    return results
+
+# ------------------------
+# UI
+# ------------------------
 if st.button("🚀 AI 초강력 추천"):
+    
     prob = predict_prob()
     best = generate_best(prob)
 
     st.subheader("🔥 추천 번호")
-    for i, b in enumerate(best[:num_sets],1):
+    for i, b in enumerate(best,1):
         st.write(f"{i}. {b}")
 
-    st.subheader("📊 백테스트")
-    for b in best[:num_sets]:
-        st.write(f"{b} → 점수: {evaluate(b, df)}")
+    # ------------------------
+    # 정확도 분석
+    # ------------------------
+    st.subheader("📊 정확도 분석")
+
+    results = backtest_model(df)
+
+    avg = np.mean(results)
+    high_hit = sum(r >= 3 for r in results) / len(results)
+
+    st.write(f"평균 적중 개수: {round(avg,2)}")
+    st.write(f"3개 이상 적중 확률: {round(high_hit*100,1)}%")
+
+    # ------------------------
+    # 그래프
+    # ------------------------
+    st.subheader("📈 적중 분포")
+
+    fig, ax = plt.subplots()
+    ax.hist(results, bins=10)
+    st.pyplot(fig)
+
+    # ------------------------
+    # 히트맵
+    # ------------------------
+    st.subheader("🔥 번호 히트맵")
+
+    counter = Counter()
+    for row in df.values:
+        for n in row:
+            counter[n] += 1
+
+    fig2, ax2 = plt.subplots()
+    ax2.bar(counter.keys(), counter.values())
+    st.pyplot(fig2)
