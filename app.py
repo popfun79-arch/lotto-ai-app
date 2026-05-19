@@ -91,3 +91,71 @@ if st.button("🚀 AI 초강력 추천"):
     st.subheader("📊 백테스트")
     for b in best[:num_sets]:
         st.write(f"{b} → 점수: {evaluate(b, df)}")
+
+
+# 📊 1. 백테스트 함수 (핵심)
+def backtest_model(df, trials=50):
+    results = []
+
+    for _ in range(trials):
+        prob = predict_prob()
+        combos = generate_best(prob)
+
+        for combo in combos:
+            score = 0
+            for row in df.values:
+                match = len(set(combo) & set(row))
+                score += match
+
+            avg_score = score / len(df)
+            results.append(avg_score)
+
+    return results
+
+
+# 📊 2. 통계 계산
+def analyze_results(results):
+    avg = np.mean(results)
+    high_hit = sum(r >= 3 for r in results) / len(results)
+
+    return avg, high_hit
+
+
+# 📊 3. UI 출력 (핵심)  👉 버튼 아래쪽에 추가
+st.subheader("📊 AI 정확도 분석")
+
+results = backtest_model(df)
+
+avg, high_hit = analyze_results(results)
+
+st.write(f"평균 적중 개수: {round(avg,2)}")
+st.write(f"3개 이상 적중 확률: {round(high_hit*100,1)}%")
+
+
+# 🚀 ✅ 2️⃣ 그래프 추가 (중요)  👉 시각화 = 신뢰도
+import matplotlib.pyplot as plt
+
+st.subheader("📈 적중 분포")
+
+fig, ax = plt.subplots()
+ax.hist(results, bins=10)
+st.pyplot(fig)
+
+
+# 🚀 ✅ 3️⃣ 히트맵 (핵심)  👉 어떤 숫자가 많이 맞는지 보여줌
+from collections import Counter
+
+st.subheader("🔥 번호 히트맵")
+
+counter = Counter()
+
+for row in df.values:
+    for n in row:
+        counter[n] += 1
+
+numbers = list(counter.keys())
+counts = list(counter.values())
+
+fig, ax = plt.subplots()
+ax.bar(numbers, counts)
+st.pyplot(fig)
