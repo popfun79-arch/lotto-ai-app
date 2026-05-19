@@ -1,5 +1,6 @@
 streamlit
-lightgbm
 pandas
 numpy
+lightgbm
 scikit-learn
+matplotlib
