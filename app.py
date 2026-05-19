@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import random
+import plotly.express as px
 from lightgbm import LGBMClassifier
-import matplotlib.pyplot as plt
 from collections import Counter
 
 st.title("🎯 로또 AI 추천 시스템")
@@ -123,9 +123,18 @@ if st.button("🚀 AI 초강력 추천"):
     # ------------------------
     st.subheader("📈 적중 분포")
 
-    fig, ax = plt.subplots()
-    ax.hist(results, bins=10)
-    st.pyplot(fig)
+    fig = px.histogram(results, nbins=10, title="적중 분포")
+    st.plotly_chart(fig, use_container_width=True)
+
+    fig = px.histogram(
+    results,
+    nbins=10,
+    title="📈 AI 추천 적중 분포",
+    labels={'value': '적중 점수'}
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
 
     # ------------------------
     # 히트맵
