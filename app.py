@@ -131,9 +131,9 @@ if st.button("🚀 AI 초강력 추천"):
     nbins=10,
     title="📈 AI 추천 적중 분포",
     labels={'value': '적중 점수'}
-)
+    )
 
-st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
 
 
     # ------------------------
