@@ -174,6 +174,7 @@ def skip_pattern_score(c):
     avg = np.mean([
     sum(skip_map.get(int(n), 0) for n in row)
     for row in df.values
+    ])
     return 15 if avg*0.7 <= s <= avg*1.3 else 0
 
 # ------------------------
