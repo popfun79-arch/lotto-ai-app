@@ -1,22 +1,3 @@
-# 🎯 실전형 로또 확률 필터 최적화 AI 엔진
-
-## 📁 requirements.txt
-
-```txt
-streamlit
-pandas
-numpy
-requests
-plotly
-scikit-learn
-lightgbm
-```
-
----
-
-# 📁 app.py
-
-```python
 import streamlit as st
 import pandas as pd
 import numpy as np
