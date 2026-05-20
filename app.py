@@ -1,8 +1,7 @@
-
 import os
 import random
-from collections import Counter, defaultdict
 from pathlib import Path
+from collections import Counter, defaultdict
 
 import numpy as np
 import pandas as pd
@@ -13,20 +12,25 @@ from lightgbm import LGBMClassifier
 from sklearn.cluster import KMeans
 
 
+# =====================================================
+# 기본 설정
+# =====================================================
+
 st.set_page_config(page_title="🎯 ELITE LOTTO AI", layout="wide")
-st.title("🎯 ELITE LOTTO AI ENGINE")
 st.set_option("client.showErrorDetails", False)
-
-
-# =====================================================
-# 안전한 데이터 로드
-# =====================================================
+st.title("🎯 ELITE LOTTO AI ENGINE")
 
 COLUMNS = ["n1", "n2", "n3", "n4", "n5", "n6"]
 LOCAL_CSV = Path("lotto_200.csv")
+ADMIN_CODE = "elite-admin-2026"
 
 
-def _safe_json_get(url: str, timeout: int = 4):
+# =====================================================
+# 안전한 유틸
+# =====================================================
+
+
+def _safe_json_get(url: str, timeout: int = 5):
     try:
         r = requests.get(
             url,
@@ -40,10 +44,15 @@ def _safe_json_get(url: str, timeout: int = 4):
         return None
 
 
+# =====================================================
+# 데이터 수집 / 로드
+# =====================================================
+
+
 @st.cache_data(ttl=3600)
 def fetch_latest_round_number(min_round: int = 1000, max_round: int = 1400):
-    latest = None
     base = "https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo="
+    latest = None
 
     for round_no in range(max_round, min_round - 1, -1):
         data = _safe_json_get(f"{base}{round_no}")
@@ -61,7 +70,7 @@ def fetch_round_data(round_no: int):
     if not data or data.get("returnValue") != "success":
         return None
 
-    row = [
+    return [
         int(data["drwtNo1"]),
         int(data["drwtNo2"]),
         int(data["drwtNo3"]),
@@ -69,7 +78,6 @@ def fetch_round_data(round_no: int):
         int(data["drwtNo5"]),
         int(data["drwtNo6"]),
     ]
-    return row
 
 
 @st.cache_data(ttl=3600)
@@ -78,11 +86,12 @@ def load_lotto_df(last_n: int = 200):
 
     if LOCAL_CSV.exists():
         try:
-            local_df = pd.read_csv(LOCAL_CSV)
-            local_df = local_df[[c for c in local_df.columns if c in COLUMNS]].copy()
-            if len(local_df.columns) == 6:
-                local_df.columns = COLUMNS
-                local_df = local_df.dropna().astype(int)
+            tmp = pd.read_csv(LOCAL_CSV)
+            tmp = tmp[[c for c in tmp.columns if c in COLUMNS]].copy()
+            if len(tmp.columns) == 6:
+                tmp.columns = COLUMNS
+                tmp = tmp.dropna().astype(int)
+                local_df = tmp
         except Exception:
             local_df = None
 
@@ -101,7 +110,6 @@ def load_lotto_df(last_n: int = 200):
         if rows:
             online_df = pd.DataFrame(rows, columns=COLUMNS)
 
-    # 우선순위: 온라인 최신 데이터 → 로컬 CSV → 빈 DF
     if online_df is not None and not online_df.empty:
         if local_df is not None and not local_df.empty:
             merged = pd.concat([local_df, online_df], ignore_index=True)
@@ -119,7 +127,7 @@ with st.spinner("🎯 최신 로또 데이터 분석 중..."):
     df = load_lotto_df()
 
 if df.empty:
-    st.error("로또 데이터를 불러오지 못했습니다. 네트워크나 lotto_200.csv를 확인해 주세요.")
+    st.error("로또 데이터를 불러오지 못했습니다. 네트워크와 lotto_200.csv를 확인해 주세요.")
     st.stop()
 
 if len(df) < 2:
@@ -128,7 +136,7 @@ if len(df) < 2:
 
 
 # =====================================================
-# 기본 통계 / 특징 생성
+# 데이터 기본 분석
 # =====================================================
 
 
@@ -221,9 +229,53 @@ else:
     labels = np.array([0] * len(df))
     current_cluster = 0
 
+cluster_centroid = None
+if kmeans is not None:
+    try:
+        cluster_centroid = kmeans.cluster_centers_[current_cluster]
+    except Exception:
+        cluster_centroid = None
+
 
 # =====================================================
-# 확률 모델 (LightGBM + 안전한 fallback)
+# 시계열 흐름 / Coverage / Mean Reversion
+# =====================================================
+
+sum_series = pd.Series([sum(map(int, row)) for row in df.values])
+sum_ma50 = sum_series.rolling(50).mean()
+sum_std50 = sum_series.rolling(50).std()
+sum_upper = sum_ma50 + sum_std50
+sum_lower = sum_ma50 - sum_std50
+
+odd_series = pd.Series([sum(n % 2 for n in map(int, row)) for row in df.values])
+odd_ma50 = odd_series.rolling(50).mean()
+
+highlow_series = pd.Series([sum(n <= 23 for n in map(int, row)) for row in df.values])
+highlow_ma50 = highlow_series.rolling(50).mean()
+
+coverage5 = []
+coverage10 = []
+for i in range(10, len(df)):
+    current = set(map(int, df.iloc[i].values))
+    recent5 = set(df.iloc[i - 5:i].values.flatten())
+    recent10 = set(df.iloc[i - 10:i].values.flatten())
+    coverage5.append(len(current & recent5))
+    coverage10.append(len(current & recent10))
+
+coverage5_series = pd.Series(coverage5) if coverage5 else pd.Series(dtype=float)
+coverage10_series = pd.Series(coverage10) if coverage10 else pd.Series(dtype=float)
+coverage5_ma50 = coverage5_series.rolling(50).mean() if not coverage5_series.empty else pd.Series(dtype=float)
+coverage10_ma50 = coverage10_series.rolling(50).mean() if not coverage10_series.empty else pd.Series(dtype=float)
+coverage10_std50 = coverage10_series.rolling(50).std() if not coverage10_series.empty else pd.Series(dtype=float)
+coverage10_upper = coverage10_ma50 + coverage10_std50 if not coverage10_series.empty else pd.Series(dtype=float)
+coverage10_lower = coverage10_ma50 - coverage10_std50 if not coverage10_series.empty else pd.Series(dtype=float)
+
+recent5_nums = set(df.tail(5).values.flatten())
+recent10_nums = set(df.tail(10).values.flatten())
+
+
+# =====================================================
+# LightGBM 확률 모델
 # =====================================================
 
 
@@ -238,7 +290,6 @@ def build_training_data(data: pd.DataFrame, window: int = 20):
         past = data.iloc[i - window:i]
         current = set(map(int, data.iloc[i].values))
         freq_local = Counter(past.values.flatten().tolist())
-
         recent5 = past.tail(5)
         recent10 = past.tail(10)
 
@@ -273,7 +324,6 @@ def build_training_data(data: pd.DataFrame, window: int = 20):
 @st.cache_resource
 def train_model(data_signature: str):
     X, y = build_training_data(df)
-
     if len(X) == 0 or len(np.unique(y)) < 2:
         return None
 
@@ -296,13 +346,12 @@ model = train_model(str(df.shape) + str(df.iloc[-1].tolist()))
 
 
 def predict_prob():
-    # LightGBM 사용 가능하면 사용, 아니면 frequency 기반 fallback
     if model is None:
         scores = {}
         total = sum(freq.values()) or 1
         for n in range(1, 46):
             scores[n] = (freq.get(n, 0) / total) + max(0, 15 - skip_map.get(n, 0)) * 0.01
-        return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        return [(n, scores[n]) for n in range(1, 46)]
 
     past = df.tail(min(20, len(df)))
     freq_local = Counter(past.values.flatten().tolist())
@@ -339,7 +388,7 @@ def predict_prob():
 
 
 # =====================================================
-# 패턴 필터 / 점수
+# 패턴 / 상태 엔진
 # =====================================================
 
 past_sums = [sum(map(int, row)) for row in df.values]
@@ -348,20 +397,23 @@ sum_std = float(np.std(past_sums))
 sum_low = sum_mean - sum_std
 sum_high = sum_mean + sum_std
 
+past_skip_sums = [sum(skip_map.get(int(n), 0) for n in row) for row in df.values]
+skip_mean = float(np.mean(past_skip_sums))
+skip_std = float(np.std(past_skip_sums))
+skip_low = skip_mean - skip_std
+skip_high = skip_mean + skip_std
+
 
 def basic_filter(combo):
     combo = sorted(map(int, combo))
 
-    # 이미 나온 조합 완전 제외
     for row in df.values:
         if combo == sorted(map(int, row)):
             return False
 
-    # 6연속처럼 너무 규칙적인 조합 제외
     if max(combo) - min(combo) == 5:
         return False
 
-    # 동일 끝자리 3개 이상 제한
     tails = [n % 10 for n in combo]
     if max(Counter(tails).values()) >= 3:
         return False
@@ -425,16 +477,46 @@ def combo_skip_sum(combo):
     return sum(skip_map.get(int(n), 0) for n in combo)
 
 
-past_skip_sums = [combo_skip_sum(row) for row in df.values]
-skip_mean = float(np.mean(past_skip_sums))
-skip_std = float(np.std(past_skip_sums))
-skip_low = skip_mean - skip_std
-skip_high = skip_mean + skip_std
-
-
 def check_skip_pattern(combo):
     s = combo_skip_sum(combo)
     return skip_low <= s <= skip_high
+
+
+def coverage_score(combo):
+    score = 0
+    r5 = sum(n in recent5_nums for n in combo)
+    r10 = sum(n in recent10_nums for n in combo)
+
+    if 2 <= r5 <= 3:
+        score += 8
+    if 4 <= r10 <= 5:
+        score += 12
+
+    latest_cov10 = coverage10_series.iloc[-1] if not coverage10_series.empty else 0
+    if latest_cov10 >= 5 and r10 <= 4:
+        score += 6
+    elif latest_cov10 <= 3 and r10 >= 5:
+        score += 6
+
+    return score
+
+
+def mean_reversion_score(combo):
+    score = 0
+    combo_sum = sum(combo)
+    latest_sum = sum_series.iloc[-1]
+    current_ma50 = sum_ma50.iloc[-1]
+    current_upper = sum_upper.iloc[-1]
+    current_lower = sum_lower.iloc[-1]
+
+    if pd.notna(current_upper) and latest_sum > current_upper:
+        if pd.notna(current_ma50) and combo_sum < current_ma50:
+            score += 10
+    elif pd.notna(current_lower) and latest_sum < current_lower:
+        if pd.notna(current_ma50) and combo_sum > current_ma50:
+            score += 10
+
+    return score
 
 
 def pair_score(combo):
@@ -444,15 +526,6 @@ def pair_score(combo):
             pair = tuple(sorted((int(combo[i]), int(combo[j]))))
             score += pair_matrix.get(pair, 0)
     return score
-
-
-# Cluster score: 현재 군집의 중심과의 거리
-cluster_centroid = None
-if kmeans is not None:
-    try:
-        cluster_centroid = kmeans.cluster_centers_[current_cluster]
-    except Exception:
-        cluster_centroid = None
 
 
 def cluster_score(combo):
@@ -468,8 +541,96 @@ def cluster_score(combo):
     return max(0.0, 10.0 - dist)
 
 
+def adaptive_weights(state):
+    weights = {
+        "prob": 1.0,
+        "pair": 1.0,
+        "skip": 1.0,
+        "neighbor": 1.0,
+        "repeater": 1.0,
+        "tail": 1.0,
+        "decade": 1.0,
+        "gap": 1.0,
+        "coverage": 1.0,
+        "meanrev": 1.0,
+        "cluster": 1.0,
+    }
+
+    if state["sum_state"] == "OVERHEAT":
+        weights["meanrev"] = 1.2
+    elif state["sum_state"] == "COOL":
+        weights["meanrev"] = 1.15
+
+    if state["coverage_state"] == "OVERHEAT":
+        weights["coverage"] = 1.15
+    elif state["coverage_state"] == "COOL":
+        weights["coverage"] = 1.05
+
+    if state["odd_state"] == "BALANCED":
+        weights["neighbor"] = 1.05
+
+    if state["highlow_state"] == "BALANCED":
+        weights["pair"] = 1.05
+
+    return weights
+
+
+def state_engine():
+    latest_sum = int(sum_series.iloc[-1])
+    latest_odd = int(odd_series.iloc[-1])
+    latest_high = int(highlow_series.iloc[-1])
+    latest_cov10 = int(coverage10_series.iloc[-1]) if not coverage10_series.empty else 0
+
+    sum_upper_v = float(sum_upper.iloc[-1]) if pd.notna(sum_upper.iloc[-1]) else sum_mean + sum_std
+    sum_lower_v = float(sum_lower.iloc[-1]) if pd.notna(sum_lower.iloc[-1]) else sum_mean - sum_std
+
+    coverage_upper_v = float(coverage10_upper.iloc[-1]) if not coverage10_upper.empty and pd.notna(coverage10_upper.iloc[-1]) else 5
+    coverage_lower_v = float(coverage10_lower.iloc[-1]) if not coverage10_lower.empty and pd.notna(coverage10_lower.iloc[-1]) else 3
+
+    if latest_sum > sum_upper_v:
+        sum_state = "OVERHEAT"
+    elif latest_sum < sum_lower_v:
+        sum_state = "COOL"
+    else:
+        sum_state = "NORMAL"
+
+    if latest_cov10 >= coverage_upper_v:
+        coverage_state = "OVERHEAT"
+    elif latest_cov10 <= coverage_lower_v:
+        coverage_state = "COOL"
+    else:
+        coverage_state = "NORMAL"
+
+    if latest_odd in [2, 3, 4]:
+        odd_state = "BALANCED"
+    elif latest_odd <= 1:
+        odd_state = "EVEN_HEAVY"
+    else:
+        odd_state = "ODD_HEAVY"
+
+    if latest_high in [2, 3, 4]:
+        highlow_state = "BALANCED"
+    elif latest_high <= 1:
+        highlow_state = "LOW_HEAVY"
+    else:
+        highlow_state = "HIGH_HEAVY"
+
+    return {
+        "sum_state": sum_state,
+        "coverage_state": coverage_state,
+        "odd_state": odd_state,
+        "highlow_state": highlow_state,
+        "latest_sum": latest_sum,
+        "latest_cov10": latest_cov10,
+    }
+
+
+state = state_engine()
+weights = adaptive_weights(state)
+
+
 # =====================================================
-# ELITE 풀 / 조합 생성
+# ELITE 번호 풀 / 조합 생성
 # =====================================================
 
 
@@ -502,10 +663,6 @@ def build_top20(prob):
     return sorted(scores, key=scores.get, reverse=True)[:20]
 
 
-def build_elite_pool(top20, size=8):
-    # 관리자 전용처럼 사용할 수 있는 핵심 풀
-    return top20[:size]
-
 
 def fitness(combo, prob_dict):
     combo = sorted(map(int, combo))
@@ -514,11 +671,8 @@ def fitness(combo, prob_dict):
         return 0.0
 
     score = 0.0
+    score += sum(prob_dict.get(n, 0.0) for n in combo) * weights["prob"]
 
-    # 확률
-    score += sum(prob_dict.get(n, 0.0) for n in combo)
-
-    # 합계 / 홀짝 / 고저
     if check_sum(combo):
         score += 10
     if check_odd_even(combo):
@@ -526,64 +680,58 @@ def fitness(combo, prob_dict):
     if check_high_low(combo):
         score += 8
 
-    # Neighbor / Repeater
-    score += sum(n in neighbors for n in combo) * 4
-    score += sum(n in last_row for n in combo) * 4
-
-    # Skip / Pair / Tail / Decade / Gap / Cluster
-    if check_skip_pattern(combo):
-        score += 10
-    score += pair_score(combo) * 0.03
-    score += cluster_score(combo)
+    score += sum(n in neighbors for n in combo) * 4 * weights["neighbor"]
+    score += sum(n in last_row for n in combo) * 4 * weights["repeater"]
+    score += sum(max(0, 12 - skip_map.get(n, 0)) for n in combo) * weights["skip"]
+    score += pair_score(combo) * 0.03 * weights["pair"]
+    score += cluster_score(combo) * weights["cluster"]
+    score += coverage_score(combo) * weights["coverage"]
+    score += mean_reversion_score(combo) * weights["meanrev"]
 
     if check_tail(combo):
-        score += 5
+        score += 5 * weights["tail"]
     if check_decade(combo):
-        score += 5
+        score += 5 * weights["decade"]
     if check_gap(combo):
-        score += 5
+        score += 5 * weights["gap"]
 
     return score
 
 
-def super_filter(combo):
-    return (
-        check_sum(combo)
-        and check_odd_even(combo)
-        and check_high_low(combo)
-        and check_neighbor(combo)
-        and check_repeater(combo)
-        and check_tail(combo)
-        and check_decade(combo)
-        and check_gap(combo)
-        and check_skip_pattern(combo)
-    )
 
-
-def generate_elite(prob, elite_pool_size=8):
+def generate_elite(prob, elite_pool_size: int = 8):
     prob_dict = dict(prob)
     top20 = build_top20(prob)
-    elite_pool = build_elite_pool(top20, size=elite_pool_size)
+    elite_pool = top20[:elite_pool_size]
 
+    anchor = elite_pool[:3] if len(elite_pool) >= 3 else elite_pool[:]
     raw = []
-    # 집중 조합 생성
+
     for _ in range(5000):
-        combo = sorted(random.sample(elite_pool, 6))
+        if len(elite_pool) >= 6:
+            combo = set(anchor)
+            rest = list(set(elite_pool) - set(anchor))
+            while len(combo) < 6 and rest:
+                combo.add(random.choice(rest))
+            combo = sorted(combo)
+        else:
+            combo = sorted(random.sample(top20, 6))
+
+        if len(combo) != 6:
+            continue
+
         if super_filter(combo):
             score = fitness(combo, prob_dict)
             raw.append((combo, score))
 
-    # fallback: 너무 엄격해서 0개일 때
     if not raw:
         for _ in range(5000):
             combo = sorted(random.sample(top20, 6))
             if basic_filter(combo):
-                score = fitness(combo, prob_dict)
-                raw.append((combo, score))
+                raw.append((combo, fitness(combo, prob_dict)))
 
     raw = sorted(raw, key=lambda x: x[1], reverse=True)
 
-    # 중복도 줄여서 TOP10
     final = []
     for combo, score in raw:
         is_dup = False
@@ -599,8 +747,13 @@ def generate_elite(prob, elite_pool_size=8):
     return top20, elite_pool, final
 
 
+prob = predict_prob()
+prob_dict = dict(prob)
+top20, elite_pool, elite_final = generate_elite(prob, elite_pool_size=8)
+
+
 # =====================================================
-# 설명 / UI 표현
+# 추천 이유 / 등급 / 스타일
 # =====================================================
 
 
@@ -616,7 +769,8 @@ def grade_combo(score):
     return "⚪ C급"
 
 
-def explain_combo(combo, prob_dict):
+
+def explain_combo(combo):
     reasons = []
     if check_sum(combo):
         reasons.append("합계 안정")
@@ -637,6 +791,7 @@ def explain_combo(combo, prob_dict):
     if check_gap(combo):
         reasons.append("Gap 패턴")
     return reasons
+
 
 
 def style_numbers(combo):
@@ -671,12 +826,259 @@ def style_numbers(combo):
 
 
 # =====================================================
+# Walk-Forward Backtest / Diversity / State Report
+# =====================================================
+
+
+def build_context(train_df: pd.DataFrame):
+    t_freq = get_number_frequency(train_df)
+    t_skip_map = build_skip_map(train_df)
+    t_pair_matrix = build_pair_matrix(train_df)
+    t_last_row = list(map(int, train_df.iloc[-1].values))
+    t_neighbors = get_neighbors(t_last_row)
+    t_sum_series = pd.Series([sum(map(int, row)) for row in train_df.values])
+    t_sum_ma50 = t_sum_series.rolling(50).mean()
+    t_sum_std50 = t_sum_series.rolling(50).std()
+    t_sum_upper = t_sum_ma50 + t_sum_std50
+    t_sum_lower = t_sum_ma50 - t_sum_std50
+
+    t_odd_series = pd.Series([sum(n % 2 for n in map(int, row)) for row in train_df.values])
+    t_highlow_series = pd.Series([sum(n <= 23 for n in map(int, row)) for row in train_df.values])
+
+    t_recent5_nums = set(train_df.tail(5).values.flatten())
+    t_recent10_nums = set(train_df.tail(10).values.flatten())
+
+    t_past_skip_sums = [sum(t_skip_map.get(int(n), 0) for n in row) for row in train_df.values]
+    t_skip_mean = float(np.mean(t_past_skip_sums))
+    t_skip_std = float(np.std(t_past_skip_sums))
+    t_skip_low = t_skip_mean - t_skip_std
+    t_skip_high = t_skip_mean + t_skip_std
+
+    t_features = make_features(train_df)
+    if len(train_df) >= 2:
+        n_clusters_local = min(5, len(train_df))
+        km = KMeans(n_clusters=n_clusters_local, random_state=42, n_init=10)
+        lbls = km.fit_predict(t_features)
+        t_current_cluster = int(lbls[-1])
+        t_cluster_centroid = km.cluster_centers_[t_current_cluster]
+    else:
+        t_current_cluster = 0
+        t_cluster_centroid = None
+
+    return {
+        "df": train_df,
+        "freq": t_freq,
+        "skip_map": t_skip_map,
+        "pair_matrix": t_pair_matrix,
+        "last_row": t_last_row,
+        "neighbors": t_neighbors,
+        "sum_series": t_sum_series,
+        "sum_ma50": t_sum_ma50,
+        "sum_std50": t_sum_std50,
+        "sum_upper": t_sum_upper,
+        "sum_lower": t_sum_lower,
+        "odd_series": t_odd_series,
+        "highlow_series": t_highlow_series,
+        "recent5_nums": t_recent5_nums,
+        "recent10_nums": t_recent10_nums,
+        "skip_low": t_skip_low,
+        "skip_high": t_skip_high,
+        "current_cluster": t_current_cluster,
+        "cluster_centroid": t_cluster_centroid,
+    }
+
+
+
+def adaptive_weights_from_context(ctx):
+    latest_sum = int(ctx["sum_series"].iloc[-1])
+    sum_upper_v = float(ctx["sum_upper"].iloc[-1]) if pd.notna(ctx["sum_upper"].iloc[-1]) else float(ctx["sum_series"].mean())
+    sum_lower_v = float(ctx["sum_lower"].iloc[-1]) if pd.notna(ctx["sum_lower"].iloc[-1]) else float(ctx["sum_series"].mean())
+
+    latest_cov10 = int(len(set(df.tail(10).values.flatten()) & set(map(int, df.iloc[-1].values)))) if len(df) >= 10 else 0
+
+    sum_state = "NORMAL"
+    if latest_sum > sum_upper_v:
+        sum_state = "OVERHEAT"
+    elif latest_sum < sum_lower_v:
+        sum_state = "COOL"
+
+    coverage_state = "NORMAL"
+    if latest_cov10 >= 5:
+        coverage_state = "OVERHEAT"
+    elif latest_cov10 <= 3:
+        coverage_state = "COOL"
+
+    odd_state = "BALANCED" if sum(map(int, df.iloc[-1].values)) % 2 in [2, 3, 4] else "BIAS"
+    highlow_state = "BALANCED" if sum(n <= 23 for n in map(int, df.iloc[-1].values)) in [2, 3, 4] else "BIAS"
+
+    weights = {
+        "prob": 1.0,
+        "pair": 1.0,
+        "skip": 1.0,
+        "neighbor": 1.0,
+        "repeater": 1.0,
+        "tail": 1.0,
+        "decade": 1.0,
+        "gap": 1.0,
+        "coverage": 1.0,
+        "meanrev": 1.0,
+        "cluster": 1.0,
+    }
+
+    if sum_state == "OVERHEAT":
+        weights["meanrev"] = 1.2
+    elif sum_state == "COOL":
+        weights["meanrev"] = 1.15
+
+    if coverage_state == "OVERHEAT":
+        weights["coverage"] = 1.15
+    elif coverage_state == "COOL":
+        weights["coverage"] = 1.05
+
+    if odd_state == "BALANCED":
+        weights["neighbor"] = 1.05
+    if highlow_state == "BALANCED":
+        weights["pair"] = 1.05
+
+    return {
+        "sum_state": sum_state,
+        "coverage_state": coverage_state,
+        "odd_state": odd_state,
+        "highlow_state": highlow_state,
+        "latest_sum": latest_sum,
+        "latest_cov10": latest_cov10,
+        "weights": weights,
+    }
+
+
+ctx = build_context(df)
+state = adaptive_weights_from_context(ctx)
+weights = state["weights"]
+
+
+
+def diversity_ok(candidate, selected):
+    for existed, _ in selected:
+        if len(set(candidate) & set(existed)) >= 5:
+            return False
+    return True
+
+
+@st.cache_data(ttl=3600)
+def walk_forward_backtest(data_signature: str, folds: int = 15):
+    if len(df) < 60:
+        return []
+
+    results = []
+    start = max(50, len(df) - folds)
+
+    for i in range(start, len(df)):
+        train_df = df.iloc[:i].reset_index(drop=True)
+        test_row = set(map(int, df.iloc[i].values))
+        train_ctx = build_context(train_df)
+        train_state = adaptive_weights_from_context(train_ctx)
+        train_weights = train_state["weights"]
+
+        # training-based lightweight score
+        t_freq = train_ctx["freq"]
+        t_skip_map = train_ctx["skip_map"]
+        t_pair_matrix = train_ctx["pair_matrix"]
+        t_neighbors = train_ctx["neighbors"]
+        t_last_row = train_ctx["last_row"]
+        t_sum_series = train_ctx["sum_series"]
+        t_sum_ma50 = train_ctx["sum_ma50"]
+        t_sum_std50 = train_ctx["sum_std50"]
+        t_sum_upper = train_ctx["sum_upper"]
+        t_sum_lower = train_ctx["sum_lower"]
+        t_recent5_nums = train_ctx["recent5_nums"]
+        t_recent10_nums = train_ctx["recent10_nums"]
+        t_skip_low = train_ctx["skip_low"]
+        t_skip_high = train_ctx["skip_high"]
+        t_cluster_centroid = train_ctx["cluster_centroid"]
+
+        def t_pair_score(combo):
+            score = 0
+            for a in range(len(combo)):
+                for b in range(a + 1, len(combo)):
+                    pair = tuple(sorted((int(combo[a]), int(combo[b]))))
+                    score += t_pair_matrix.get(pair, 0)
+            return score
+
+        def t_cluster_score(combo):
+            if t_cluster_centroid is None:
+                return 0.0
+            feat = np.array([
+                sum(combo),
+                sum(n % 2 for n in combo),
+                sum(n <= 23 for n in combo),
+                max(combo) - min(combo),
+            ], dtype=float)
+            dist = float(np.linalg.norm(feat - t_cluster_centroid))
+            return max(0.0, 10.0 - dist)
+
+        def t_coverage_score(combo):
+            r5 = sum(n in t_recent5_nums for n in combo)
+            r10 = sum(n in t_recent10_nums for n in combo)
+            score = 0
+            if 2 <= r5 <= 3:
+                score += 8
+            if 4 <= r10 <= 5:
+                score += 12
+            return score
+
+        def t_mean_reversion_score(combo):
+            combo_sum = sum(combo)
+            latest_sum = t_sum_series.iloc[-1]
+            current_ma50 = t_sum_ma50.iloc[-1]
+            current_upper = t_sum_upper.iloc[-1]
+            current_lower = t_sum_lower.iloc[-1]
+            score = 0
+            if pd.notna(current_upper) and latest_sum > current_upper and pd.notna(current_ma50) and combo_sum < current_ma50:
+                score += 10
+            elif pd.notna(current_lower) and latest_sum < current_lower and pd.notna(current_ma50) and combo_sum > current_ma50:
+                score += 10
+            return score
+
+        def t_fitness(combo):
+            combo = sorted(map(int, combo))
+            if not basic_filter(combo):
+                return 0.0
+            score = 0.0
+            score += sum((t_freq.get(n, 0) / max(1, sum(t_freq.values()))) for n in combo) * 50
+            score += sum(n in t_neighbors for n in combo) * 4 * train_weights["neighbor"]
+            score += sum(n in t_last_row for n in combo) * 4 * train_weights["repeater"]
+            score += sum(max(0, 12 - t_skip_map.get(n, 0)) for n in combo) * train_weights["skip"]
+            score += t_pair_score(combo) * 0.03 * train_weights["pair"]
+            score += t_cluster_score(combo) * train_weights["cluster"]
+            score += t_coverage_score(combo) * train_weights["coverage"]
+            score += t_mean_reversion_score(combo) * train_weights["meanrev"]
+            return score
+
+        top20_local = sorted(range(1, 46), key=lambda n: t_freq.get(n, 0), reverse=True)[:20]
+        elite_pool_local = top20_local[:8]
+        raw = []
+
+        for _ in range(1500):
+            combo = sorted(random.sample(elite_pool_local if len(elite_pool_local) >= 6 else top20_local, 6))
+            score = t_fitness(combo)
+            raw.append((combo, score))
+
+        raw = sorted(raw, key=lambda x: x[1], reverse=True)
+        best = raw[0][0] if raw else sorted(random.sample(range(1, 46), 6))
+        hit = len(set(best) & test_row)
+        results.append(hit)
+
+    return results
+
+
+# =====================================================
 # UI
 # =====================================================
 
-st.sidebar.title("👤 사용자")
-user_id = st.sidebar.text_input("이메일 입력")
-use_personal = st.sidebar.checkbox("🎯 개인화 추천", value=True)
+st.sidebar.title("👤 관리자 / 상태")
+admin_mode = st.sidebar.checkbox("🔐 관리자 모드")
+admin_code_input = st.sidebar.text_input("관리자 코드", type="password")
+is_admin = admin_mode and (admin_code_input == ADMIN_CODE)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔐 보안 상태")
@@ -684,20 +1086,14 @@ st.sidebar.success("✔ 입력 검증 활성화")
 st.sidebar.success("✔ 데이터 빈값 방어")
 st.sidebar.success("✔ API 실패 fallback")
 
-if not user_id:
-    st.info("이메일을 입력하면 개인화 기록 기능을 사용할 수 있습니다.")
-
 st.sidebar.markdown("---")
-st.sidebar.subheader("🧠 현재 분석 상태")
+st.sidebar.subheader("🧠 현재 상태")
 st.sidebar.write(f"데이터 회차 수: {len(df)}")
 st.sidebar.write(f"현재 군집: {current_cluster}")
-st.sidebar.write(f"핵심 압축 번호: 20개")
-st.sidebar.write(f"ELITE 풀: 8개")
-
-
-prob = predict_prob()
-prob_dict = dict(prob)
-top20, elite_pool, elite_final = generate_elite(prob, elite_pool_size=8)
+st.sidebar.write(f"합계 상태: {state['sum_state']}")
+st.sidebar.write(f"Coverage 상태: {state['coverage_state']}")
+st.sidebar.write(f"홀짝 상태: {state['odd_state']}")
+st.sidebar.write(f"고저 상태: {state['highlow_state']}")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -705,54 +1101,111 @@ with col1:
 with col2:
     st.metric("🧠 현재 군집", current_cluster)
 with col3:
-    st.metric("🔥 ELITE 풀", len(elite_pool))
+    st.metric("🔥 ELITE 풀", 8)
 
 st.subheader("🔥 핵심 압축 번호 TOP20")
-st.write(top20)
+st.markdown(style_numbers(top20), unsafe_allow_html=True)
 
-st.subheader("👑 ELITE TOP10")
+if is_admin:
+    st.subheader("🔐 관리자 전용 ELITE 풀 (Top 8)")
+    st.markdown(style_numbers(elite_pool), unsafe_allow_html=True)
 
-if elite_final:
-    for i, (combo, score) in enumerate(elite_final, 1):
-        grade = grade_combo(score)
-        reasons = explain_combo(combo, prob_dict)
-
-        st.markdown(f"## {i}. {grade}")
-        st.markdown(style_numbers(combo), unsafe_allow_html=True)
-        st.write(f"💯 점수: {round(score, 2)}")
-        st.write("✔ 추천 이유:", ", ".join(reasons) if reasons else "기본 조건 충족")
-        st.progress(min(score / 100, 1.0))
-        st.markdown("---")
+    st.subheader("👑 관리자 전용 최강 조합 TOP10")
+    if elite_final:
+        for i, (combo, score) in enumerate(elite_final, 1):
+            grade = grade_combo(score)
+            reasons = explain_combo(combo)
+            st.markdown(f"## {i}. {grade}")
+            st.markdown(style_numbers(combo), unsafe_allow_html=True)
+            st.write(f"💯 점수: {round(score, 2)}")
+            st.write("✔ 추천 이유:", ", ".join(reasons) if reasons else "기본 조건 충족")
+            st.progress(min(score / 100, 1.0))
+            st.markdown("---")
+    else:
+        st.warning("관리자 전용 최강 조합이 생성되지 않았습니다.")
 else:
-    st.warning("ELITE 후보가 너무 엄격해서 생성되지 않았습니다. 필터를 완화해 주세요.")
+    st.subheader("👑 추천 결과")
+    public_view = elite_final[:3]
+    if public_view:
+        for i, (combo, score) in enumerate(public_view, 1):
+            grade = grade_combo(score)
+            reasons = explain_combo(combo)
+            st.markdown(f"## {i}. {grade}")
+            st.markdown(style_numbers(combo), unsafe_allow_html=True)
+            st.write(f"💯 점수: {round(score, 2)}")
+            st.write("✔ 추천 이유:", ", ".join(reasons) if reasons else "기본 조건 충족")
+            st.progress(min(score / 100, 1.0))
+            st.markdown("---")
+    else:
+        st.warning("추천 조합이 생성되지 않았습니다.")
 
 
-# =====================================================
-# 백테스트 / 시각화
-# =====================================================
+st.subheader("📈 합계 시계열 흐름 (rolling 50)")
+fig_sum = px.line(x=range(len(sum_series)), y=sum_series, title="합계 흐름")
+st.plotly_chart(fig_sum, use_container_width=True)
 
-
-def backtest(elite_list):
-    results = []
-    for row in df.values[-50:]:
-        real = set(map(int, row))
-        for combo, _ in elite_list:
-            results.append(len(set(combo) & real))
-    return results
-
-
-results = backtest(elite_final)
+st.subheader("📈 최근10회 Coverage 흐름")
+if not coverage10_series.empty:
+    fig_cov = px.line(x=range(len(coverage10_series)), y=coverage10_series, title="최근10회 번호 포함 개수 흐름")
+    st.plotly_chart(fig_cov, use_container_width=True)
+else:
+    st.info("Coverage 시계열은 데이터가 더 쌓이면 표시됩니다.")
 
 st.subheader("📊 백테스트 적중 분포")
-fig = px.histogram(results, nbins=10, title="적중 분포")
-st.plotly_chart(fig, use_container_width=True)
+backtest_results = []
+for row in df.values[-50:]:
+    real = set(map(int, row))
+    for combo, _ in elite_final[:10]:
+        backtest_results.append(len(set(combo) & real))
 
-st.subheader("📈 번호 출현 빈도")
-freq_df = pd.DataFrame({"번호": list(freq.keys()), "빈도": list(freq.values())})
-fig2 = px.bar(freq_df, x="번호", y="빈도", title="번호 출현 빈도")
-st.plotly_chart(fig2, use_container_width=True)
+fig_bt = px.histogram(backtest_results, nbins=10, title="적중 분포")
+st.plotly_chart(fig_bt, use_container_width=True)
+
+st.subheader("📊 Walk-Forward Backtest")
+if st.button("▶ 백테스트 실행"):
+    wf = walk_forward_backtest(str(df.shape) + str(df.iloc[-1].tolist()), folds=min(15, max(0, len(df) - 50)))
+    if wf:
+        st.write(f"평균 적중: {round(float(np.mean(wf)), 2)}")
+        st.write(f"최대 적중: {max(wf)}")
+        st.write(f"적중 분포: {Counter(wf)}")
+    else:
+        st.warning("백테스트를 수행할 데이터가 충분하지 않습니다.")
 
 st.subheader("🧠 확률 필터 최적화 연구")
 st.info(
-    "현재 시스템은 단순 번호 추천이 아니라 '확률 패턴 공간 압축' 기반 AI 엔진입니다."
-    )
+    "현재 시스템은 단순 번호 추천이 아니라 '확률 패턴 공간 압축' 기반 AI 엔진입니다.
+
+"
+    "적용 요소:
+"
+    "- Pair Matrix
+"
+    "- Skip LN
+"
+    "- Neighbor
+"
+    "- Repeater
+"
+    "- Gap Pattern
+"
+    "- Tail Pattern
+"
+    "- Cluster Analysis
+"
+    "- Adaptive Probability
+"
+    "- Rolling 50
+"
+    "- Coverage Flow
+"
+    "- Mean Reversion
+"
+    "- Walk-Forward Backtest
+"
+    "- Adaptive Weight Engine
+"
+    "- Diversity Engine
+"
+    "- State Engine
+"
+)
