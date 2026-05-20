@@ -1,4 +1,3 @@
-import os
 import random
 from pathlib import Path
 from collections import Counter, defaultdict
@@ -49,6 +48,36 @@ def _safe_json_get(url: str, timeout: int = 5):
 # =====================================================
 
 
+def _normalize_local_df(raw: pd.DataFrame):
+    if raw is None or raw.empty:
+        return None
+
+    # 가장 흔한 형태 우선 처리
+    if set(COLUMNS).issubset(set(raw.columns)):
+        out = raw[COLUMNS].copy()
+        out = out.dropna().astype(int)
+        return out
+
+    # 회차/보너스 같은 보조 컬럼이 섞여 있으면 숫자 6개만 추출
+    ignore_names = {"round", "회차", "bonus", "보너스", "bonus_no", "bonusnum"}
+    candidate_cols = [c for c in raw.columns if str(c).lower() not in ignore_names]
+
+    if len(candidate_cols) >= 6:
+        out = raw[candidate_cols[:6]].copy()
+        out.columns = COLUMNS
+        out = out.dropna().astype(int)
+        return out
+
+    # 마지막 fallback: 앞 6개 컬럼
+    if len(raw.columns) >= 6:
+        out = raw.iloc[:, :6].copy()
+        out.columns = COLUMNS
+        out = out.dropna().astype(int)
+        return out
+
+    return None
+
+
 @st.cache_data(ttl=3600)
 def fetch_latest_round_number(min_round: int = 1000, max_round: int = 1400):
     base = "https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo="
@@ -86,12 +115,8 @@ def load_lotto_df(last_n: int = 200):
 
     if LOCAL_CSV.exists():
         try:
-            tmp = pd.read_csv(LOCAL_CSV)
-            tmp = tmp[[c for c in tmp.columns if c in COLUMNS]].copy()
-            if len(tmp.columns) == 6:
-                tmp.columns = COLUMNS
-                tmp = tmp.dropna().astype(int)
-                local_df = tmp
+            raw = pd.read_csv(LOCAL_CSV)
+            local_df = _normalize_local_df(raw)
         except Exception:
             local_df = None
 
@@ -136,7 +161,7 @@ if len(df) < 2:
 
 
 # =====================================================
-# 데이터 기본 분석
+# 기본 분석
 # =====================================================
 
 
@@ -482,6 +507,22 @@ def check_skip_pattern(combo):
     return skip_low <= s <= skip_high
 
 
+# ✅ 빠진 함수가 있던 부분: 여기 포함
+
+def super_filter(combo):
+    return (
+        check_sum(combo)
+        and check_odd_even(combo)
+        and check_high_low(combo)
+        and check_neighbor(combo)
+        and check_repeater(combo)
+        and check_tail(combo)
+        and check_decade(combo)
+        and check_gap(combo)
+        and check_skip_pattern(combo)
+    )
+
+
 def coverage_score(combo):
     score = 0
     r5 = sum(n in recent5_nums for n in combo)
@@ -541,38 +582,9 @@ def cluster_score(combo):
     return max(0.0, 10.0 - dist)
 
 
-def adaptive_weights(state):
-    weights = {
-        "prob": 1.0,
-        "pair": 1.0,
-        "skip": 1.0,
-        "neighbor": 1.0,
-        "repeater": 1.0,
-        "tail": 1.0,
-        "decade": 1.0,
-        "gap": 1.0,
-        "coverage": 1.0,
-        "meanrev": 1.0,
-        "cluster": 1.0,
-    }
-
-    if state["sum_state"] == "OVERHEAT":
-        weights["meanrev"] = 1.2
-    elif state["sum_state"] == "COOL":
-        weights["meanrev"] = 1.15
-
-    if state["coverage_state"] == "OVERHEAT":
-        weights["coverage"] = 1.15
-    elif state["coverage_state"] == "COOL":
-        weights["coverage"] = 1.05
-
-    if state["odd_state"] == "BALANCED":
-        weights["neighbor"] = 1.05
-
-    if state["highlow_state"] == "BALANCED":
-        weights["pair"] = 1.05
-
-    return weights
+# =====================================================
+# Adaptive Weight / State Engine
+# =====================================================
 
 
 def state_engine():
@@ -626,7 +638,42 @@ def state_engine():
 
 
 state = state_engine()
-weights = adaptive_weights(state)
+
+
+def adaptive_weights_from_state(state):
+    weights = {
+        "prob": 1.0,
+        "pair": 1.0,
+        "skip": 1.0,
+        "neighbor": 1.0,
+        "repeater": 1.0,
+        "tail": 1.0,
+        "decade": 1.0,
+        "gap": 1.0,
+        "coverage": 1.0,
+        "meanrev": 1.0,
+        "cluster": 1.0,
+    }
+
+    if state["sum_state"] == "OVERHEAT":
+        weights["meanrev"] = 1.2
+    elif state["sum_state"] == "COOL":
+        weights["meanrev"] = 1.15
+
+    if state["coverage_state"] == "OVERHEAT":
+        weights["coverage"] = 1.15
+    elif state["coverage_state"] == "COOL":
+        weights["coverage"] = 1.05
+
+    if state["odd_state"] == "BALANCED":
+        weights["neighbor"] = 1.05
+    if state["highlow_state"] == "BALANCED":
+        weights["pair"] = 1.05
+
+    return weights
+
+
+weights = adaptive_weights_from_state(state)
 
 
 # =====================================================
@@ -699,6 +746,21 @@ def fitness(combo, prob_dict):
 
 
 
+def super_filter(combo):
+    return (
+        check_sum(combo)
+        and check_odd_even(combo)
+        and check_high_low(combo)
+        and check_neighbor(combo)
+        and check_repeater(combo)
+        and check_tail(combo)
+        and check_decade(combo)
+        and check_gap(combo)
+        and check_skip_pattern(combo)
+    )
+
+
+
 def generate_elite(prob, elite_pool_size: int = 8):
     prob_dict = dict(prob)
     top20 = build_top20(prob)
@@ -707,7 +769,7 @@ def generate_elite(prob, elite_pool_size: int = 8):
     anchor = elite_pool[:3] if len(elite_pool) >= 3 else elite_pool[:]
     raw = []
 
-    for _ in range(5000):
+    for _ in range(1200):
         if len(elite_pool) >= 6:
             combo = set(anchor)
             rest = list(set(elite_pool) - set(anchor))
@@ -725,7 +787,7 @@ def generate_elite(prob, elite_pool_size: int = 8):
             raw.append((combo, score))
 
     if not raw:
-        for _ in range(5000):
+        for _ in range(1200):
             combo = sorted(random.sample(top20, 6))
             if basic_filter(combo):
                 raw.append((combo, fitness(combo, prob_dict)))
@@ -736,7 +798,7 @@ def generate_elite(prob, elite_pool_size: int = 8):
     for combo, score in raw:
         is_dup = False
         for exist, _ in final:
-            if len(set(combo) & set(exist)) >= 5:
+            if len(set(combo) & set(exist)) >= 4:
                 is_dup = True
                 break
         if not is_dup:
@@ -750,18 +812,6 @@ def generate_elite(prob, elite_pool_size: int = 8):
 prob = predict_prob()
 prob_dict = dict(prob)
 top20, elite_pool, elite_final = generate_elite(prob, elite_pool_size=8)
-def super_filter(combo):
-    return (
-        check_sum(combo)
-        and check_odd_even(combo)
-        and check_high_low(combo)
-        and check_neighbor(combo)
-        and check_repeater(combo)
-        and check_tail(combo)
-        and check_decade(combo)
-        and check_gap(combo)
-        and check_skip_pattern(combo)
-    )
 
 
 # =====================================================
@@ -770,13 +820,13 @@ def super_filter(combo):
 
 
 def grade_combo(score):
-    if score >= 70:
+    if score >= 80:
         return "👑 ELITE"
-    if score >= 55:
+    if score >= 70:
         return "🔥 S급"
-    if score >= 40:
+    if score >= 60:
         return "⭐ A급"
-    if score >= 25:
+    if score >= 50:
         return "👍 B급"
     return "⚪ C급"
 
@@ -854,15 +904,12 @@ def build_context(train_df: pd.DataFrame):
     t_sum_upper = t_sum_ma50 + t_sum_std50
     t_sum_lower = t_sum_ma50 - t_sum_std50
 
-    t_odd_series = pd.Series([sum(n % 2 for n in map(int, row)) for row in train_df.values])
-    t_highlow_series = pd.Series([sum(n <= 23 for n in map(int, row)) for row in train_df.values])
-
     t_recent5_nums = set(train_df.tail(5).values.flatten())
     t_recent10_nums = set(train_df.tail(10).values.flatten())
 
     t_past_skip_sums = [sum(t_skip_map.get(int(n), 0) for n in row) for row in train_df.values]
-    t_skip_mean = float(np.mean(t_past_skip_sums))
-    t_skip_std = float(np.std(t_past_skip_sums))
+    t_skip_mean = float(np.mean(t_past_skip_sums)) if t_past_skip_sums else 0.0
+    t_skip_std = float(np.std(t_past_skip_sums)) if t_past_skip_sums else 0.0
     t_skip_low = t_skip_mean - t_skip_std
     t_skip_high = t_skip_mean + t_skip_std
 
@@ -889,8 +936,6 @@ def build_context(train_df: pd.DataFrame):
         "sum_std50": t_sum_std50,
         "sum_upper": t_sum_upper,
         "sum_lower": t_sum_lower,
-        "odd_series": t_odd_series,
-        "highlow_series": t_highlow_series,
         "recent5_nums": t_recent5_nums,
         "recent10_nums": t_recent10_nums,
         "skip_low": t_skip_low,
@@ -963,10 +1008,8 @@ def adaptive_weights_from_context(ctx):
     }
 
 
-ctx = build_context(df)
-state = adaptive_weights_from_context(ctx)
+state = adaptive_weights_from_context(build_context(df))
 weights = state["weights"]
-
 
 
 def diversity_ok(candidate, selected):
@@ -977,7 +1020,7 @@ def diversity_ok(candidate, selected):
 
 
 @st.cache_data(ttl=3600)
-def walk_forward_backtest(data_signature: str, folds: int = 15):
+def walk_forward_backtest(data_signature: str, folds: int = 10):
     if len(df) < 60:
         return []
 
@@ -991,7 +1034,6 @@ def walk_forward_backtest(data_signature: str, folds: int = 15):
         train_state = adaptive_weights_from_context(train_ctx)
         train_weights = train_state["weights"]
 
-        # training-based lightweight score
         t_freq = train_ctx["freq"]
         t_skip_map = train_ctx["skip_map"]
         t_pair_matrix = train_ctx["pair_matrix"]
@@ -1004,8 +1046,6 @@ def walk_forward_backtest(data_signature: str, folds: int = 15):
         t_sum_lower = train_ctx["sum_lower"]
         t_recent5_nums = train_ctx["recent5_nums"]
         t_recent10_nums = train_ctx["recent10_nums"]
-        t_skip_low = train_ctx["skip_low"]
-        t_skip_high = train_ctx["skip_high"]
         t_cluster_centroid = train_ctx["cluster_centroid"]
 
         def t_pair_score(combo):
@@ -1051,12 +1091,25 @@ def walk_forward_backtest(data_signature: str, folds: int = 15):
                 score += 10
             return score
 
+        def t_basic_filter(combo):
+            combo = sorted(map(int, combo))
+            for row in train_df.values:
+                if combo == sorted(map(int, row)):
+                    return False
+            if max(combo) - min(combo) == 5:
+                return False
+            tails = [n % 10 for n in combo]
+            if max(Counter(tails).values()) >= 3:
+                return False
+            return True
+
         def t_fitness(combo):
             combo = sorted(map(int, combo))
-            if not basic_filter(combo):
+            if not t_basic_filter(combo):
                 return 0.0
             score = 0.0
-            score += sum((t_freq.get(n, 0) / max(1, sum(t_freq.values()))) for n in combo) * 50
+            total_freq = max(1, sum(t_freq.values()))
+            score += sum((t_freq.get(n, 0) / total_freq) for n in combo) * 50
             score += sum(n in t_neighbors for n in combo) * 4 * train_weights["neighbor"]
             score += sum(n in t_last_row for n in combo) * 4 * train_weights["repeater"]
             score += sum(max(0, 12 - t_skip_map.get(n, 0)) for n in combo) * train_weights["skip"]
@@ -1070,7 +1123,7 @@ def walk_forward_backtest(data_signature: str, folds: int = 15):
         elite_pool_local = top20_local[:8]
         raw = []
 
-        for _ in range(1500):
+        for _ in range(800):
             combo = sorted(random.sample(elite_pool_local if len(elite_pool_local) >= 6 else top20_local, 6))
             score = t_fitness(combo)
             raw.append((combo, score))
@@ -1170,12 +1223,15 @@ for row in df.values[-50:]:
     for combo, _ in elite_final[:10]:
         backtest_results.append(len(set(combo) & real))
 
-fig_bt = px.histogram(backtest_results, nbins=10, title="적중 분포")
-st.plotly_chart(fig_bt, use_container_width=True)
+if backtest_results:
+    fig_bt = px.histogram(backtest_results, nbins=10, title="적중 분포")
+    st.plotly_chart(fig_bt, use_container_width=True)
+else:
+    st.info("백테스트 결과가 아직 없습니다.")
 
 st.subheader("📊 Walk-Forward Backtest")
-if st.button("▶ 백테스트 실행"):
-    wf = walk_forward_backtest(str(df.shape) + str(df.iloc[-1].tolist()), folds=min(15, max(0, len(df) - 50)))
+if is_admin and st.button("▶ 백테스트 실행"):
+    wf = walk_forward_backtest(str(df.shape) + str(df.iloc[-1].tolist()), folds=min(10, max(0, len(df) - 50)))
     if wf:
         st.write(f"평균 적중: {round(float(np.mean(wf)), 2)}")
         st.write(f"최대 적중: {max(wf)}")
@@ -1185,5 +1241,4 @@ if st.button("▶ 백테스트 실행"):
 
 st.subheader("🧠 확률 필터 최적화 연구")
 st.info(
-    "현재 시스템은 단순 번호 추천이 아니라 '확률 패턴 공간 압축' 기반 AI 엔진입니다."
-)
+    "현재 시스템은 단순 번호 추천이 아니라 '확률 패턴 공간 압축' 기반 AI 엔진입니다.")
