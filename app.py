@@ -820,13 +820,13 @@ top20, elite_pool, elite_final = generate_elite(prob, elite_pool_size=8)
 
 
 def grade_combo(score):
-    if score >= 80:
-        return "👑 ELITE"
     if score >= 70:
+        return "👑 ELITE"
+    if score >= 55:
         return "🔥 S급"
-    if score >= 60:
+    if score >= 40:
         return "⭐ A급"
-    if score >= 50:
+    if score >= 25:
         return "👍 B급"
     return "⚪ C급"
 
@@ -1172,12 +1172,15 @@ st.subheader("🔥 핵심 압축 번호 TOP20")
 st.markdown(style_numbers(top20), unsafe_allow_html=True)
 
 if is_admin:
-    st.subheader("🔐 관리자 전용 ELITE 풀 (Top 8)")
+    st.subheader("🔐 관리자 전용 ELITE 풀 (Top 10)")
     st.markdown(style_numbers(elite_pool), unsafe_allow_html=True)
 
+    admin_elite_final = [(combo, score) for combo, score in elite_final if score >= 90]
     st.subheader("👑 관리자 전용 최강 조합 TOP10")
-    if elite_final:
-        for i, (combo, score) in enumerate(elite_final, 1):
+    st.caption("관리자 강조 기준: score >= 90")
+
+    if admin_elite_final:
+        for i, (combo, score) in enumerate(admin_elite_final[:10], 1):
             grade = grade_combo(score)
             reasons = explain_combo(combo)
             st.markdown(f"## {i}. {grade}")
@@ -1187,7 +1190,16 @@ if is_admin:
             st.progress(min(score / 100, 1.0))
             st.markdown("---")
     else:
-        st.warning("관리자 전용 최강 조합이 생성되지 않았습니다.")
+        st.warning("score >= 90 인 최강 조합이 없습니다. 현재 상위 조합을 대신 표시합니다.")
+        for i, (combo, score) in enumerate(elite_final[:10], 1):
+            grade = grade_combo(score)
+            reasons = explain_combo(combo)
+            st.markdown(f"## {i}. {grade}")
+            st.markdown(style_numbers(combo), unsafe_allow_html=True)
+            st.write(f"💯 점수: {round(score, 2)}")
+            st.write("✔ 추천 이유:", ", ".join(reasons) if reasons else "기본 조건 충족")
+            st.progress(min(score / 100, 1.0))
+            st.markdown("---")
 else:
     st.subheader("👑 추천 결과")
     public_view = elite_final[:3]
@@ -1223,11 +1235,22 @@ for row in df.values[-50:]:
     for combo, _ in elite_final[:10]:
         backtest_results.append(len(set(combo) & real))
 
-if backtest_results:
-    fig_bt = px.histogram(backtest_results, nbins=10, title="적중 분포")
-    st.plotly_chart(fig_bt, use_container_width=True)
-else:
-    st.info("백테스트 결과가 아직 없습니다.")
+hit_counter = Counter(backtest_results)
+x_vals = list(range(7))
+y_vals = [hit_counter.get(i, 0) for i in x_vals]
+
+fig_bt = px.bar(
+    x=x_vals,
+    y=y_vals,
+    title="적중 분포",
+    labels={"x": "적중 개수", "y": "횟수"}
+)
+st.plotly_chart(fig_bt, use_container_width=True)
+
+hit4plus = sum(1 for x in backtest_results if x >= 4)
+if is_admin:
+    st.metric("4개 이상 적중 횟수", hit4plus)
+    st.caption("관리자 강조 기준: 백테스트 4개 이상 적중 구간")
 
 st.subheader("📊 Walk-Forward Backtest")
 if is_admin and st.button("▶ 백테스트 실행"):
