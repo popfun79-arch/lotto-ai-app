@@ -671,34 +671,7 @@ st.info("""
 
 ---
 
-# 🚀 실행 방법
 
-## 로컬 실행
-
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
-
----
-
-# 🌐 Streamlit Cloud 배포
-
-## GitHub 업로드
-
-```text
-app.py
-requirements.txt
-```
-
-업로드 후:
-
-```text
-Streamlit Cloud
-→ New app
-→ Repository 선택
-→ Main file path = app.py
-→ Deploy
 ```
 
 ---
