@@ -1,8 +1,7 @@
 streamlit
 pandas
 numpy
-lightgbm
-scikit-learn
-plotly
 requests
-prophet
+plotly
+scikit-learn
+lightgbm
