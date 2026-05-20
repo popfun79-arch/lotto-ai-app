@@ -750,6 +750,18 @@ def generate_elite(prob, elite_pool_size: int = 8):
 prob = predict_prob()
 prob_dict = dict(prob)
 top20, elite_pool, elite_final = generate_elite(prob, elite_pool_size=8)
+def super_filter(combo):
+    return (
+        check_sum(combo)
+        and check_odd_even(combo)
+        and check_high_low(combo)
+        and check_neighbor(combo)
+        and check_repeater(combo)
+        and check_tail(combo)
+        and check_decade(combo)
+        and check_gap(combo)
+        and check_skip_pattern(combo)
+    )
 
 
 # =====================================================
