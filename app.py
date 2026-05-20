@@ -1173,39 +1173,5 @@ if st.button("▶ 백테스트 실행"):
 
 st.subheader("🧠 확률 필터 최적화 연구")
 st.info(
-    "현재 시스템은 단순 번호 추천이 아니라 '확률 패턴 공간 압축' 기반 AI 엔진입니다.
-
-"
-    "적용 요소:
-"
-    "- Pair Matrix
-"
-    "- Skip LN
-"
-    "- Neighbor
-"
-    "- Repeater
-"
-    "- Gap Pattern
-"
-    "- Tail Pattern
-"
-    "- Cluster Analysis
-"
-    "- Adaptive Probability
-"
-    "- Rolling 50
-"
-    "- Coverage Flow
-"
-    "- Mean Reversion
-"
-    "- Walk-Forward Backtest
-"
-    "- Adaptive Weight Engine
-"
-    "- Diversity Engine
-"
-    "- State Engine
-"
+    "현재 시스템은 단순 번호 추천이 아니라 '확률 패턴 공간 압축' 기반 AI 엔진입니다."
 )
