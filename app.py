@@ -1,24 +1,4 @@
-# 🎯 실전형 로또 확률 필터 최적화 AI 엔진
 
-아래 파일 2개만 사용합니다.
-
-## requirements.txt
-
-```txt
-streamlit
-pandas
-numpy
-requests
-plotly
-scikit-learn
-lightgbm
-```
-
----
-
-## app.py
-
-```python
 import os
 import random
 from collections import Counter, defaultdict
@@ -774,42 +754,4 @@ st.plotly_chart(fig2, use_container_width=True)
 
 st.subheader("🧠 확률 필터 최적화 연구")
 st.info(
-    "현재 시스템은 단순 번호 추천이 아니라 '확률 패턴 공간 압축' 기반 AI 엔진입니다.
-
-"
-    "적용 요소:
-"
-    "- Pair Matrix
-"
-    "- Skip LN
-"
-    "- Neighbor
-"
-    "- Repeater
-"
-    "- Gap Pattern
-"
-    "- Tail Pattern
-"
-    "- Cluster Analysis
-"
-    "- Adaptive Probability
-"
-)
-```
-
----
-
-## 사용 팁
-
-* `app.py`에는 **파이썬 코드만** 남겨두세요.
-* `lotto_200.csv`가 있으면 우선 읽고, 없으면 온라인 수집으로 대체합니다.
-* 데이터가 비어 있으면 앱이 중단되기 전에 안전 메시지를 띄우고 멈춥니다.
-
----
-
-## Streamlit에서 막히면 먼저 확인할 것
-
-* `app.py` 마지막에 설명 문장, `→`, `↓`, ``` 같은 문자가 남아 있지 않은지
-* GitHub 저장소에 `app.py`, `requirements.txt`, `lotto_200.csv`가 있는지
-* `Main file path`가 `app.py`인지
+    "현재 시스템은 단순 번호 추천이 아니라 '확률 패턴 공간 압축' 기반 AI 엔진입니다.)
