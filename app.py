@@ -820,14 +820,16 @@ top20, elite_pool, elite_final = generate_elite(prob, elite_pool_size=8)
 
 
 def grade_combo(score):
-    if score >= 70:
+    if score >= 90:
+        return "👑 BEST"
+    if score >= 80:
         return "👑 ELITE"
-    if score >= 55:
-        return "🔥 S급"
-    if score >= 40:
-        return "⭐ A급"
-    if score >= 25:
-        return "👍 B급"
+    if score >= 70:
+        return "🔥 A급"
+    if score >= 60:
+        return "⭐ B급"
+    if score >= 50:
+        return "👍 C급"
     return "⚪ C급"
 
 
@@ -1175,9 +1177,9 @@ if is_admin:
     st.subheader("🔐 관리자 전용 ELITE 풀 (Top 10)")
     st.markdown(style_numbers(elite_pool), unsafe_allow_html=True)
 
-    admin_elite_final = [(combo, score) for combo, score in elite_final if score >= 90]
+    admin_elite_final = [(combo, score) for combo, score in elite_final if score >= 95]
     st.subheader("👑 관리자 전용 최강 조합 TOP10")
-    st.caption("관리자 강조 기준: score >= 90")
+    st.caption("관리자 강조 기준: score >= 95")
 
     if admin_elite_final:
         for i, (combo, score) in enumerate(admin_elite_final[:10], 1):
