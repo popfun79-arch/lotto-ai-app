@@ -647,14 +647,3 @@ st.info("""
 - Cluster Analysis
 - Adaptive Probability
 """)
-
-
-# 🔥 다음 업그레이드 추천
-
-* Adaptive Weight Engine
-* Monte Carlo Simulation
-* Prophet Trend
-* GA Filter Evolution
-* 관리자 전용 ELITE 모드
-* 회차별 추천 저장
-* 적중률 통계 DB
