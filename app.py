@@ -821,14 +821,12 @@ top20, elite_pool, elite_final = generate_elite(prob, elite_pool_size=8)
 
 def grade_combo(score):
     if score >= 90:
-        return "👑 BEST"
-    if score >= 80:
         return "👑 ELITE"
-    if score >= 70:
+    if score >= 80:
         return "🔥 A급"
-    if score >= 60:
+    if score >= 70:
         return "⭐ B급"
-    if score >= 50:
+    if score >= 60:
         return "👍 C급"
     return "⚪ C급"
 
@@ -1168,7 +1166,7 @@ with col1:
 with col2:
     st.metric("🧠 현재 군집", current_cluster)
 with col3:
-    st.metric("🔥 ELITE 풀", 8)
+    st.metric("🔥 ELITE 풀", 11)
 
 st.subheader("🔥 핵심 압축 번호 TOP20")
 st.markdown(style_numbers(top20), unsafe_allow_html=True)
@@ -1192,7 +1190,7 @@ if is_admin:
             st.progress(min(score / 100, 1.0))
             st.markdown("---")
     else:
-        st.warning("score >= 90 인 최강 조합이 없습니다. 현재 상위 조합을 대신 표시합니다.")
+        st.warning("score >= 95 인 최강 조합이 없습니다. 현재 상위 조합을 대신 표시합니다.")
         for i, (combo, score) in enumerate(elite_final[:10], 1):
             grade = grade_combo(score)
             reasons = explain_combo(combo)
@@ -1258,7 +1256,7 @@ st.subheader("📊 Walk-Forward Backtest")
 if is_admin and st.button("▶ 백테스트 실행"):
     wf = walk_forward_backtest(str(df.shape) + str(df.iloc[-1].tolist()), folds=min(10, max(0, len(df) - 50)))
     if wf:
-        st.write(f"평균 적중: {round(float(np.mean(wf)), 2)}")
+        st.write(f"평균 적중: {round(float(np.mean(wf)), 3)}")
         st.write(f"최대 적중: {max(wf)}")
         st.write(f"적중 분포: {Counter(wf)}")
     else:
