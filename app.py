@@ -707,7 +707,7 @@ def build_top20(prob):
 
         scores[n] = score
 
-    return sorted(scores, key=scores.get, reverse=True)[:20]
+    return sorted(scores, key=scores.get, reverse=True)[:13]
 
 
 
