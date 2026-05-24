@@ -1,1267 +1,717 @@
-import random
-from pathlib import Path
-from collections import Counter, defaultdict
-
-import numpy as np
+# 필수 라이브러리 임포트
 import pandas as pd
-import plotly.express as px
-import requests
-import streamlit as st
-from lightgbm import LGBMClassifier
-from sklearn.cluster import KMeans
-
-
-# =====================================================
-# 기본 설정
-# =====================================================
-
-st.set_page_config(page_title="🎯 ELITE LOTTO AI", layout="wide")
-st.set_option("client.showErrorDetails", False)
-st.title("🎯 ELITE LOTTO AI ENGINE")
-
-COLUMNS = ["n1", "n2", "n3", "n4", "n5", "n6"]
-LOCAL_CSV = Path("lotto_200.csv")
-ADMIN_CODE = "elite-admin-2026"
-
-
-# =====================================================
-# 안전한 유틸
-# =====================================================
-
-
-def _safe_json_get(url: str, timeout: int = 5):
-    try:
-        r = requests.get(
-            url,
-            timeout=timeout,
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        if r.status_code != 200:
-            return None
-        return r.json()
-    except Exception:
-        return None
-
-
-# =====================================================
-# 데이터 수집 / 로드
-# =====================================================
-
-
-def _normalize_local_df(raw: pd.DataFrame):
-    if raw is None or raw.empty:
-        return None
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import sys
+from pathlib import Path
 
-    # 가장 흔한 형태 우선 처리
-    if set(COLUMNS).issubset(set(raw.columns)):
-        out = raw[COLUMNS].copy()
-        out = out.dropna().astype(int)
-        return out
-
-    # 회차/보너스 같은 보조 컬럼이 섞여 있으면 숫자 6개만 추출
-    ignore_names = {"round", "회차", "bonus", "보너스", "bonus_no", "bonusnum"}
-    candidate_cols = [c for c in raw.columns if str(c).lower() not in ignore_names]
+# 프로젝트 모듈 임포트
+sys.path.insert(0, str(Path.cwd()))
+from analysis.data_loader import LottoDataLoader
+from analysis.statistics import LottoStatistics
+from analysis.patterns import LottoPatternAnalysis
+from analysis.gail_howard import GailHowardStrategy
+from visualization.charts import LottoVisualizer
+from prediction.predictor import LottoPredictor
 
-    if len(candidate_cols) >= 6:
-        out = raw[candidate_cols[:6]].copy()
-        out.columns = COLUMNS
-        out = out.dropna().astype(int)
-        return out
+# 한글 폰트 설정
+plt.rcParams['font.family'] = 'DejaVu Sans'
+sns.set_style('whitegrid')
+sns.set_palette('husl')
 
-    # 마지막 fallback: 앞 6개 컬럼
-    if len(raw.columns) >= 6:
-        out = raw.iloc[:, :6].copy()
-        out.columns = COLUMNS
-        out = out.dropna().astype(int)
-        return out
+print('✓ 모든 라이브러리 임포트 완료')
 
-    return None
 
 
-@st.cache_data(ttl=3600)
-def fetch_latest_round_number(min_round: int = 1000, max_round: int = 1400):
-    base = "https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo="
-    latest = None
+# 데이터 로드
+loader = LottoDataLoader('data/lotto_data.csv')
+data = loader.load()
+data = loader.preprocess()
 
-    for round_no in range(max_round, min_round - 1, -1):
-        data = _safe_json_get(f"{base}{round_no}")
-        if data and data.get("returnValue") == "success":
-            latest = round_no
-            break
+# 데이터 요약
+summary = loader.get_summary()
+print('\n📊 데이터 요약:')
+for key, value in summary.items():
+    print(f'  {key}: {value}')
 
-    return latest
+print('\n첫 10행 미리보기:')
+data.head(10)
 
 
-@st.cache_data(ttl=3600)
-def fetch_round_data(round_no: int):
-    base = "https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo="
-    data = _safe_json_get(f"{base}{round_no}")
-    if not data or data.get("returnValue") != "success":
-        return None
 
-    return [
-        int(data["drwtNo1"]),
-        int(data["drwtNo2"]),
-        int(data["drwtNo3"]),
-        int(data["drwtNo4"]),
-        int(data["drwtNo5"]),
-        int(data["drwtNo6"]),
-    ]
+# 통계 분석 객체 생성
+stats = LottoStatistics(data)
 
+# 기본 통계량
+print('📈 기본 통계량:')
+stats_dict = stats.get_statistics()
+for key, value in stats_dict.items():
+    print(f'  {key}: {value:.2f}' if isinstance(value, float) else f'  {key}: {value}')
 
-@st.cache_data(ttl=3600)
-def load_lotto_df(last_n: int = 200):
-    local_df = None
 
-    if LOCAL_CSV.exists():
-        try:
-            raw = pd.read_csv(LOCAL_CSV)
-            local_df = _normalize_local_df(raw)
-        except Exception:
-            local_df = None
+# 핫번호 (자주 나오는 번호)
+print('\n🔥 핫번호 TOP 15:')
+hot = stats.get_hot_numbers(15)
+print(hot.to_string())
 
-    latest_round = fetch_latest_round_number()
-    online_df = None
 
-    if latest_round is not None:
-        rows = []
-        start_round = max(1, latest_round - last_n + 1)
+# 콜드번호 (잘 안 나오는 번호)
+print('\n❄️ 콜드번호 TOP 15:')
+cold = stats.get_cold_numbers(15)
+print(cold.to_string())
 
-        for round_no in range(start_round, latest_round + 1):
-            row = fetch_round_data(round_no)
-            if row is not None and len(row) == 6:
-                rows.append(row)
 
-        if rows:
-            online_df = pd.DataFrame(rows, columns=COLUMNS)
+# 홀짝 비율
+print('\n🔢 홀짝 비율:')
+odd_even = stats.get_odd_even_ratio()
+for key, value in odd_even.items():
+    print(f'  {key}: {value}')
 
-    if online_df is not None and not online_df.empty:
-        if local_df is not None and not local_df.empty:
-            merged = pd.concat([local_df, online_df], ignore_index=True)
-            merged = merged.drop_duplicates().tail(last_n).reset_index(drop=True)
-            return merged
-        return online_df.tail(last_n).reset_index(drop=True)
 
-    if local_df is not None and not local_df.empty:
-        return local_df.tail(last_n).reset_index(drop=True)
+# 패턴 분석 객체 생성
+pattern = LottoPatternAnalysis(data)
 
-    return pd.DataFrame(columns=COLUMNS)
+# 연번 패턴
+print('📊 연번 패턴 분석:')
+consecutive = pattern.get_consecutive_numbers()
+print(consecutive.to_string())
 
 
-with st.spinner("🎯 최신 로또 데이터 분석 중..."):
-    df = load_lotto_df()
+# 번호 간 간격 분석
+print('\n📏 번호 간 간격 분석 (TOP 10):')
+gap = pattern.get_number_gap_analysis()
+print(gap.head(10).to_string())
 
-if df.empty:
-    st.error("로또 데이터를 불러오지 못했습니다. 네트워크와 lotto_200.csv를 확인해 주세요.")
-    st.stop()
 
-if len(df) < 2:
-    st.error("데이터가 너무 적습니다. 최소 2회차 이상 필요합니다.")
-    st.stop()
+# 구간별 분포
+print('\n📍 구간별 분포:')
+section = pattern.get_section_distribution()
+print(section.to_string())
 
 
-# =====================================================
-# 기본 분석
-# =====================================================
+# 시각화 객체 생성
+viz = LottoVisualizer(figsize=(14, 8))
 
+# 번호별 빈도 막대 그래프
+freq_df = stats.get_frequency()
+freq_df.columns = ['num', 'frequency']
 
-def get_number_frequency(data: pd.DataFrame):
-    nums = []
-    for row in data.values:
-        nums.extend(list(map(int, row)))
-    return Counter(nums)
+fig = viz.plot_frequency_bar(freq_df, 'Lotto Number Frequency (1-45)')
+plt.show()
+viz.save_figure(fig, 'results/01_frequency_bar.png')
 
 
-freq = get_number_frequency(df)
-last_row = list(map(int, df.iloc[-1].values))
+# 홀짝 비율 파이 차트
+odd_even = stats.get_odd_even_ratio()
+fig = viz.plot_odd_even_pie(odd_even['홀수'], odd_even['짝수'])
+plt.show()
+viz.save_figure(fig, 'results/02_odd_even_pie.png')
 
 
-@st.cache_data(ttl=3600)
-def build_skip_map(data: pd.DataFrame):
-    skip_map = {}
-    reversed_rows = data.iloc[::-1].values
+# 구간별 분포 막대 그래프
+section_df = pattern.get_section_distribution()
+section_df.columns = ['section', 'frequency']
 
-    for n in range(1, 46):
-        skip = 0
-        found = False
-        for row in reversed_rows:
-            row = list(map(int, row))
-            if n in row:
-                found = True
-                break
-            skip += 1
-        if not found:
-            skip = len(data)
-        skip_map[n] = skip
-
-    return skip_map
-
-
-@st.cache_data(ttl=3600)
-def build_pair_matrix(data: pd.DataFrame):
-    pair_matrix = defaultdict(int)
-    for row in data.values:
-        row = sorted(map(int, row))
-        for i in range(len(row)):
-            for j in range(i + 1, len(row)):
-                pair_matrix[(row[i], row[j])] += 1
-    return pair_matrix
-
-
-skip_map = build_skip_map(df)
-pair_matrix = build_pair_matrix(df)
-
-
-def get_neighbors(row):
-    neighbors = set()
-    for n in row:
-        if n > 1:
-            neighbors.add(n - 1)
-        if n < 45:
-            neighbors.add(n + 1)
-    return neighbors
-
-
-neighbors = get_neighbors(last_row)
-
-
-# =====================================================
-# 군집 분석
-# =====================================================
-
-
-def make_features(data: pd.DataFrame):
-    feats = []
-    for row in data.values:
-        row = list(map(int, row))
-        feats.append([
-            sum(row),
-            sum(n % 2 for n in row),
-            sum(n <= 23 for n in row),
-            max(row) - min(row),
-        ])
-    return np.array(feats)
-
-
-X_cluster = make_features(df)
-if len(df) >= 2:
-    n_clusters = min(5, len(df))
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    labels = kmeans.fit_predict(X_cluster)
-    current_cluster = int(labels[-1])
-else:
-    kmeans = None
-    labels = np.array([0] * len(df))
-    current_cluster = 0
-
-cluster_centroid = None
-if kmeans is not None:
-    try:
-        cluster_centroid = kmeans.cluster_centers_[current_cluster]
-    except Exception:
-        cluster_centroid = None
-
-
-# =====================================================
-# 시계열 흐름 / Coverage / Mean Reversion
-# =====================================================
-
-sum_series = pd.Series([sum(map(int, row)) for row in df.values])
-sum_ma50 = sum_series.rolling(50).mean()
-sum_std50 = sum_series.rolling(50).std()
-sum_upper = sum_ma50 + sum_std50
-sum_lower = sum_ma50 - sum_std50
-
-odd_series = pd.Series([sum(n % 2 for n in map(int, row)) for row in df.values])
-odd_ma50 = odd_series.rolling(50).mean()
-
-highlow_series = pd.Series([sum(n <= 23 for n in map(int, row)) for row in df.values])
-highlow_ma50 = highlow_series.rolling(50).mean()
-
-coverage5 = []
-coverage10 = []
-for i in range(10, len(df)):
-    current = set(map(int, df.iloc[i].values))
-    recent5 = set(df.iloc[i - 5:i].values.flatten())
-    recent10 = set(df.iloc[i - 10:i].values.flatten())
-    coverage5.append(len(current & recent5))
-    coverage10.append(len(current & recent10))
-
-coverage5_series = pd.Series(coverage5) if coverage5 else pd.Series(dtype=float)
-coverage10_series = pd.Series(coverage10) if coverage10 else pd.Series(dtype=float)
-coverage5_ma50 = coverage5_series.rolling(50).mean() if not coverage5_series.empty else pd.Series(dtype=float)
-coverage10_ma50 = coverage10_series.rolling(50).mean() if not coverage10_series.empty else pd.Series(dtype=float)
-coverage10_std50 = coverage10_series.rolling(50).std() if not coverage10_series.empty else pd.Series(dtype=float)
-coverage10_upper = coverage10_ma50 + coverage10_std50 if not coverage10_series.empty else pd.Series(dtype=float)
-coverage10_lower = coverage10_ma50 - coverage10_std50 if not coverage10_series.empty else pd.Series(dtype=float)
-
-recent5_nums = set(df.tail(5).values.flatten())
-recent10_nums = set(df.tail(10).values.flatten())
-
-
-# =====================================================
-# LightGBM 확률 모델
-# =====================================================
-
-
-def build_training_data(data: pd.DataFrame, window: int = 20):
-    X, y = [], []
-    if len(data) <= 1:
-        return np.array(X), np.array(y)
-
-    window = max(5, min(window, len(data) - 1))
-
-    for i in range(window, len(data)):
-        past = data.iloc[i - window:i]
-        current = set(map(int, data.iloc[i].values))
-        freq_local = Counter(past.values.flatten().tolist())
-        recent5 = past.tail(5)
-        recent10 = past.tail(10)
-
-        for num in range(1, 46):
-            last_seen = 0
-            for j in range(len(past) - 1, -1, -1):
-                if num in set(map(int, past.iloc[j].values)):
-                    last_seen = len(past) - j
-                    break
-
-            pair_strength = 0
-            for row in past.values:
-                row = list(map(int, row))
-                if num in row:
-                    pair_strength += len(row)
-
-            X.append([
-                num,
-                freq_local.get(num, 0),
-                sum(num in set(map(int, r)) for r in recent5.values),
-                sum(num in set(map(int, r)) for r in recent10.values),
-                last_seen,
-                pair_strength,
-                num % 2,
-                int(num <= 23),
-            ])
-            y.append(1 if num in current else 0)
-
-    return np.array(X), np.array(y)
-
-
-@st.cache_resource
-def train_model(data_signature: str):
-    X, y = build_training_data(df)
-    if len(X) == 0 or len(np.unique(y)) < 2:
-        return None
-
-    try:
-        model = LGBMClassifier(
-            n_estimators=250,
-            learning_rate=0.05,
-            max_depth=6,
-            subsample=0.9,
-            colsample_bytree=0.9,
-            random_state=42,
-        )
-        model.fit(X, y)
-        return model
-    except Exception:
-        return None
-
-
-model = train_model(str(df.shape) + str(df.iloc[-1].tolist()))
-
-
-def predict_prob():
-    if model is None:
-        scores = {}
-        total = sum(freq.values()) or 1
-        for n in range(1, 46):
-            scores[n] = (freq.get(n, 0) / total) + max(0, 15 - skip_map.get(n, 0)) * 0.01
-        return [(n, scores[n]) for n in range(1, 46)]
-
-    past = df.tail(min(20, len(df)))
-    freq_local = Counter(past.values.flatten().tolist())
-    recent5 = past.tail(5)
-    recent10 = past.tail(10)
-
-    features = []
-    for num in range(1, 46):
-        last_seen = 0
-        for j in range(len(past) - 1, -1, -1):
-            if num in set(map(int, past.iloc[j].values)):
-                last_seen = len(past) - j
-                break
-
-        pair_strength = 0
-        for row in past.values:
-            row = list(map(int, row))
-            if num in row:
-                pair_strength += len(row)
-
-        features.append([
-            num,
-            freq_local.get(num, 0),
-            sum(num in set(map(int, r)) for r in recent5.values),
-            sum(num in set(map(int, r)) for r in recent10.values),
-            last_seen,
-            pair_strength,
-            num % 2,
-            int(num <= 23),
-        ])
-
-    probs = model.predict_proba(np.array(features))[:, 1]
-    return [(i + 1, float(probs[i])) for i in range(45)]
-
-
-# =====================================================
-# 패턴 / 상태 엔진
-# =====================================================
-
-past_sums = [sum(map(int, row)) for row in df.values]
-sum_mean = float(np.mean(past_sums))
-sum_std = float(np.std(past_sums))
-sum_low = sum_mean - sum_std
-sum_high = sum_mean + sum_std
-
-past_skip_sums = [sum(skip_map.get(int(n), 0) for n in row) for row in df.values]
-skip_mean = float(np.mean(past_skip_sums))
-skip_std = float(np.std(past_skip_sums))
-skip_low = skip_mean - skip_std
-skip_high = skip_mean + skip_std
-
-
-def basic_filter(combo):
-    combo = sorted(map(int, combo))
-
-    for row in df.values:
-        if combo == sorted(map(int, row)):
-            return False
-
-    if max(combo) - min(combo) == 5:
-        return False
-
-    tails = [n % 10 for n in combo]
-    if max(Counter(tails).values()) >= 3:
-        return False
-
-    return True
-
-
-def check_sum(combo):
-    return sum_low <= sum(combo) <= sum_high
-
-
-def check_odd_even(combo):
-    odd = sum(n % 2 for n in combo)
-    return odd in [2, 3, 4]
-
-
-def check_high_low(combo):
-    low = sum(n <= 23 for n in combo)
-    return low in [2, 3, 4]
-
-
-def check_neighbor(combo):
-    cnt = sum(n in neighbors for n in combo)
-    return 1 <= cnt <= 2
-
-
-def check_repeater(combo):
-    cnt = sum(n in last_row for n in combo)
-    return 1 <= cnt <= 2
-
-
-def check_tail(combo):
-    tails = [n % 10 for n in combo]
-    c = Counter(tails)
-    return max(c.values()) <= 2
-
-
-def check_decade(combo):
-    groups = [0, 0, 0, 0, 0]
-    for n in combo:
-        if n <= 9:
-            groups[0] += 1
-        elif n <= 19:
-            groups[1] += 1
-        elif n <= 29:
-            groups[2] += 1
-        elif n <= 39:
-            groups[3] += 1
+fig = viz.plot_section_bar(section_df)
+plt.show()
+viz.save_figure(fig, 'results/03_section_distribution.png')
+
+
+# 예측 객체 생성
+predictor = LottoPredictor(data, stats)
+
+# 다양한 전략으로 추천
+predictor.generate_recommendations(count=5)
+
+
+# 번호별 확률 예측
+print('\n📊 번호별 예상 확률 (TOP 15):')
+probability_df = predictor.predict_probability()
+print(probability_df.to_string())
+
+
+print('\n' + '='*60)
+print('🎰 로또645 분석 최종 요약')
+print('='*60)
+
+print('\n1️⃣ 추천 번호 (최적 조합):')
+recommended = predictor.recommend_balanced()
+print(f'   {" ".join(map(str, recommended))}')
+
+print('\n2️⃣ 최고 빈도 번호 TOP 5:')
+hot_5 = stats.get_hot_numbers(5)
+for _, row in hot_5.iterrows():
+    print(f'   {int(row["num"])}: {int(row["frequency"])}회')
+
+print('\n3️⃣ 최저 빈도 번호 TOP 5:')
+cold_5 = stats.get_cold_numbers(5)
+for _, row in cold_5.iterrows():
+    print(f'   {int(row["num"])}: {int(row["frequency"])}회')
+
+print('\n4️⃣ 홀짝 비율:')
+odd_even = stats.get_odd_even_ratio()
+print(f'   홀수: {odd_even["홀수 비율(%)"]}% | 짝수: {odd_even["짝수 비율(%)"]}%')
+
+print('\n5️⃣ 주요 통계:')
+stats_info = stats.get_statistics()
+print(f'   평균: {stats_info["평균"]:.1f} | 중앙값: {stats_info["중앙값"]:.1f} | 표준편차: {stats_info["표준편차"]:.2f}')
+print(f'   범위: {stats_info["최소값"]:.0f}-{stats_info["최대값"]:.0f}')
+
+print('\n' + '='*60)
+
+
+# 최종 분석 결론
+print("\n" + "="*70)
+print("🎯 최종 분석 결론")
+print("="*70)
+
+print("""
+✅ 이 분석의 목적
+   - 로또 데이터의 통계적 특성 파악
+   - 다양한 분석 관점 제시
+   - 과학적 사고방식 제공
+
+⚠️ 중요한 주의사항
+   - 로또는 완벽한 무작위 추첨입니다
+   - 과거 패턴이 미래를 보장하지 않습니다
+   - 이 분석으로 수익을 보장할 수 없습니다
+   - 책임감 있는 도박 문화를 권장합니다
+
+📈 게일하워드 전략의 의미
+   - 무작위보다 더 균형잡힌 조합을 만드는 방법
+   - 확률을 수학적으로 생각하는 방식 제시
+   - 엔터테인먼트 목적의 과학적 접근
+
+💡 현명한 로또 구매 방법
+   1. 절대 수익 창출 수단으로 보지 않기
+   2. 여유 자금으로만 참여하기
+   3. 다양한 조합 체험해보기
+   4. 즐거움을 우선으로 생각하기
+""")
+
+print("="*70)
+print("\n✨ 분석 완료! 행운을 빕니다! 🍀")
+print("="*70)
+
+
+# 게일하워드 전략과 다른 전략의 최종 비교
+print("\n" + "="*70)
+print("📊 전략 비교 (최적 조합을 기준으로)")
+print("="*70)
+
+strategies_comparison = {
+    '게일하워드 전략': {
+        'description': '핫/콜드 균형 + 필터링',
+        'recommended': combinations[0]['numbers'] if combinations else [],
+        'strength': '균형잡힌 조합, 과학적 기준',
+        'weakness': 'CPU 비용 높음, 완벽한 예측은 불가능'
+    },
+    '빈도 기반': {
+        'description': '자주 나오는 번호 중심',
+        'recommended': predictor.recommend_by_frequency(),
+        'strength': '구현 간단, 빠름',
+        'weakness': '편향될 수 있음, 다양성 낮음'
+    },
+    '균형 중심': {
+        'description': '구간별 균형 고려',
+        'recommended': predictor.recommend_balanced(),
+        'strength': '다양성 좋음, 균형잡힘',
+        'weakness': '고빈도 번호 놓칠 수 있음'
+    },
+    '대조 전략': {
+        'description': '핫+콜드 혼합',
+        'recommended': predictor.recommend_contrast(),
+        'strength': '다양한 시각, 위험도 분산',
+        'weakness': '불안정성, 이론적 근거 약함'
+    }
+}
+
+for strategy_name, details in strategies_comparison.items():
+    print(f"\n💡 {strategy_name}")
+    print(f"   설명: {details['description']}")
+    print(f"   추천: {details['recommended']}")
+    print(f"   장점: {details['strength']}")
+    print(f"   약점: {details['weakness']}")
+
+print("\n" + "="*70)
+
+
+# 각 필터링 규칙 개별 검증
+test_combinations = [
+    ([1, 2, 3, 4, 5, 6], "3개 이상 연번 - 제거"),
+    ([1, 3, 11, 21, 31, 41], "구간 좋음 - 통과"),
+    ([1, 2, 3, 24, 25, 26], "과도한 연번 - 제거"),
+    ([2, 4, 6, 8, 10, 12], "모두 짝수 - 제거"),
+    ([1, 3, 5, 7, 9, 11], "모두 홀수 - 제거"),
+    ([5, 10, 15, 20, 25, 30], "저/고 불균형 - 제거"),
+]
+
+print("\n필터링 규칙 검증 테스트:")
+print("-" * 70)
+
+for nums, description in test_combinations:
+    result = gail.apply_all_filters(nums)
+    status = "✓ 통과" if result['passed'] else "✗ 제거"
+    print(f"{status} | {nums}")
+    print(f"       {description}")
+    print(f"       필터 결과: {result['filters']}")
+    print()
+
+
+# 게일하워드 원리 상세 설명
+print("\n" + "="*70)
+print("📚 게일하워드 로또마스터 전략의 핵심 원리")
+print("="*70)
+
+print("\n🎯 핵심 전략:")
+print("""
+1. 핫/콜드 번호 균형 조합
+   - 자주 나오는 번호(핫)와 잘 안 나오는 번호(콜드) 혼합
+   - 과거 빈도 데이터를 기반으로 한 과학적 접근
+   
+2. 필터링 규칙 (불균형 조합 제거)
+   - 연번 제거: 3개 이상 연속된 번호 제외
+   - 구간 제한: 같은 10단위 구간에 3개 이상 번호 제외
+   - 홀짝 균형: 3:3 비율 유지 (2 허용)
+   - 고저 균형: 3:3 비율 유지 (2 허용)
+   
+3. 통계적 균형
+   - 이상적인 조합의 특성을 정의하고 유지
+   - 확률을 높이기 위한 과학적 필터링
+   
+4. 장점
+   - 단순 랜덤보다 더 균형잡힌 조합 생성
+   - 과도한 패턴 제거로 확률 향상
+   - 재현 가능한 과학적 방법론
+""")
+
+print("="*70)
+
+
+# 게일하워드 전략 적용
+gail = GailHowardStrategy(data, stats)
+
+# 게일하워드 전략 보고서 출력
+combinations = gail.get_strategy_report()
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+# 시각화 1: 당첨번호 합계 분포
+fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+
+# 1-1: 합계 분포 그래프
+ax = axes[0, 0]
+sums = np.array(sum_result['all_sums'])
+ax.hist(sums, bins=30, color='steelblue', edgecolor='black', alpha=0.7)
+ax.axvline(sum_result['stats']['평균 합계'], color='red', linestyle='--', linewidth=2, label=f"평균: {sum_result['stats']['평균 합계']:.0f}")
+ax.axvline(sum_result['stats']['중앙값'], color='green', linestyle='--', linewidth=2, label=f"중앙값: {sum_result['stats']['중앙값']:.0f}")
+ax.set_xlabel('당첨번호 합계')
+ax.set_ylabel('빈도')
+ax.set_title('당첨번호 합계 분포', fontweight='bold')
+ax.legend()
+ax.grid(axis='y', alpha=0.3)
+
+# 1-2: 폭포 패턴 분포
+ax = axes[0, 1]
+waterfall_lens = waterfall_result['waterfall_df']['max_waterfall_length'].value_counts().sort_index()
+ax.bar(waterfall_lens.index, waterfall_lens.values, color='coral', edgecolor='black', alpha=0.7)
+ax.set_xlabel('폭포 길이 (연속 번호 개수)')
+ax.set_ylabel('빈도')
+ax.set_title('폭포 패턴 분포', fontweight='bold')
+ax.grid(axis='y', alpha=0.3)
+
+# 1-3: 건너띔 기간 합계
+ax = axes[1, 0]
+skip_sums = np.array(skip_sum_result['skip_sums'])
+ax.plot(skip_sums, marker='o', markersize=3, linewidth=1, color='purple', alpha=0.6)
+ax.axhline(skip_sum_result['stats']['평균'], color='red', linestyle='--', linewidth=2, label=f"평균: {skip_sum_result['stats']['평균']:.0f}")
+ax.set_xlabel('회차')
+ax.set_ylabel('건너띔 기간 합계')
+ax.set_title('회차별 건너띔 기간 합계 추이', fontweight='bold')
+ax.legend()
+ax.grid(alpha=0.3)
+
+# 1-4: 번호별 평균 건너띔 기간
+ax = axes[1, 1]
+nums_for_plot = []
+avg_skips_for_plot = []
+
+for num in range(1, 46):
+    if num in individual_result['all_patterns']:
+        analysis = individual_result['all_patterns'][num]
+        if '평균 건너띔' in analysis:
+            nums_for_plot.append(num)
+            avg_skips_for_plot.append(analysis['평균 건너띔'])
+
+# 색상 분류 (낮음/중간/높음)
+colors = ['green' if x <= 10 else 'orange' if x <= 20 else 'red' for x in avg_skips_for_plot]
+
+ax.bar(nums_for_plot, avg_skips_for_plot, color=colors, edgecolor='black', alpha=0.7)
+ax.set_xlabel('번호')
+ax.set_ylabel('평균 건너띔 기간 (회차)')
+ax.set_title('번호별 평균 건너띔 기간 (초록=자주나옴, 빨강=잘안나옴)', fontweight='bold')
+ax.grid(axis='y', alpha=0.3)
+ax.set_ylim(0, max(avg_skips_for_plot) * 1.1)
+
+plt.tight_layout()
+plt.show()
+
+print("\n✓ 고급 분석 시각화 완료")
+
+
+# 패턴 6: 각 번호의 건너띔 기간 패턴
+print("\n📊 [패턴 6] 각 번호의 건너띔 기간 패턴\n")
+individual_result = advanced.get_individual_skip_pattern()
+
+print("건너띔 기간이 짧은 번호 (자주 나오는 번호) TOP 15:")
+print("-" * 85)
+print(f"{'번호':<6} {'출현횟':<8} {'평균건너':<10} {'최대건너':<10} {'최소건너':<10} {'표준편':<10}")
+print("-" * 85)
+
+frequent = list(individual_result['frequent_numbers'].items())[:15]
+for num, analysis in frequent:
+    print(f"{num:<6} {analysis['출현 횟수']:<8} "
+          f"{analysis['평균 건너띔']:<10.1f} {analysis['최대 건너띔']:<10} "
+          f"{analysis['최소 건너띔']:<10} {analysis['표준편차']:<10.2f}")
+
+print("\n\n건너띔 기간이 긴 번호 (잘 안 나오는 번호) TOP 15:")
+print("-" * 85)
+print(f"{'번호':<6} {'출현횟':<8} {'평균건너':<10} {'최대건너':<10} {'최소건너':<10} {'표준편':<10}")
+print("-" * 85)
+
+rare = list(individual_result['rare_numbers'].items())[:15]
+for num, analysis in rare:
+    print(f"{num:<6} {analysis['출현 횟수']:<8} "
+          f"{analysis['평균 건너띔']:<10.1f} {analysis['최대 건너띔']:<10} "
+          f"{analysis['최소 건너띔']:<10} {analysis['표준편차']:<10.2f}")
+
+
+# 패턴 5: 역폭포 패턴 - 간격이 감소하는 패턴
+print("\n📊 [패턴 5] 역폭포 패턴 (간격이 감소하는 패턴)\n")
+reverse_result = advanced.get_reverse_waterfall_pattern()
+
+print("역폭포 패턴 통계:")
+print("-" * 50)
+for key, value in reverse_result['stats'].items():
+    print(f"  {key:20s}: {value:8.2f}")
+
+print("\n\n간격 감소 상위 10회 (역폭포가 강한 회차):")
+print("-" * 80)
+print("회차    당첨번호           간격           간격감소횟수")
+print("-" * 80)
+for idx, row in reverse_result['high_gap_decrease'].iterrows():
+    nums_str = ",".join(map(str, row['numbers']))
+    gaps_str = ",".join(map(str, row['gaps']))
+    print(f"{row['draw']:<6} {nums_str:<25} {gaps_str:<15} {row['gap_decrease_count']}")
+
+print("\n예시: [1,3,6,8,10,11] → 간격 [2,3,2,2,1] → 감소 횟수 3회")
+
+
+# 패턴 4: 폭포 패턴 - 연속으로 증가하는 번호
+print("\n📊 [패턴 4] 폭포 패턴 (연속으로 증가하는 번호)\n")
+waterfall_result = advanced.get_waterfall_pattern()
+
+print("폭포 패턴 통계:")
+print("-" * 50)
+for key, value in waterfall_result['stats'].items():
+    if isinstance(value, (int, float)):
+        if isinstance(value, float):
+            print(f"  {key:20s}: {value:8.2f}")
         else:
-            groups[4] += 1
-    return max(groups) <= 3
-
-
-def check_gap(combo):
-    combo = sorted(combo)
-    gaps = np.diff(combo)
-    return np.std(gaps) > 0.9
-
-
-def combo_skip_sum(combo):
-    return sum(skip_map.get(int(n), 0) for n in combo)
-
-
-def check_skip_pattern(combo):
-    s = combo_skip_sum(combo)
-    return skip_low <= s <= skip_high
-
-
-# ✅ 빠진 함수가 있던 부분: 여기 포함
-
-def super_filter(combo):
-    return (
-        check_sum(combo)
-        and check_odd_even(combo)
-        and check_high_low(combo)
-        and check_neighbor(combo)
-        and check_repeater(combo)
-        and check_tail(combo)
-        and check_decade(combo)
-        and check_gap(combo)
-        and check_skip_pattern(combo)
-    )
-
-
-def coverage_score(combo):
-    score = 0
-    r5 = sum(n in recent5_nums for n in combo)
-    r10 = sum(n in recent10_nums for n in combo)
-
-    if 2 <= r5 <= 3:
-        score += 8
-    if 4 <= r10 <= 5:
-        score += 12
-
-    latest_cov10 = coverage10_series.iloc[-1] if not coverage10_series.empty else 0
-    if latest_cov10 >= 5 and r10 <= 4:
-        score += 6
-    elif latest_cov10 <= 3 and r10 >= 5:
-        score += 6
-
-    return score
-
-
-def mean_reversion_score(combo):
-    score = 0
-    combo_sum = sum(combo)
-    latest_sum = sum_series.iloc[-1]
-    current_ma50 = sum_ma50.iloc[-1]
-    current_upper = sum_upper.iloc[-1]
-    current_lower = sum_lower.iloc[-1]
-
-    if pd.notna(current_upper) and latest_sum > current_upper:
-        if pd.notna(current_ma50) and combo_sum < current_ma50:
-            score += 10
-    elif pd.notna(current_lower) and latest_sum < current_lower:
-        if pd.notna(current_ma50) and combo_sum > current_ma50:
-            score += 10
-
-    return score
-
-
-def pair_score(combo):
-    score = 0
-    for i in range(len(combo)):
-        for j in range(i + 1, len(combo)):
-            pair = tuple(sorted((int(combo[i]), int(combo[j]))))
-            score += pair_matrix.get(pair, 0)
-    return score
-
-
-def cluster_score(combo):
-    if cluster_centroid is None:
-        return 0.0
-    feat = np.array([
-        sum(combo),
-        sum(n % 2 for n in combo),
-        sum(n <= 23 for n in combo),
-        max(combo) - min(combo),
-    ], dtype=float)
-    dist = float(np.linalg.norm(feat - cluster_centroid))
-    return max(0.0, 10.0 - dist)
-
-
-# =====================================================
-# Adaptive Weight / State Engine
-# =====================================================
-
-
-def state_engine():
-    latest_sum = int(sum_series.iloc[-1])
-    latest_odd = int(odd_series.iloc[-1])
-    latest_high = int(highlow_series.iloc[-1])
-    latest_cov10 = int(coverage10_series.iloc[-1]) if not coverage10_series.empty else 0
-
-    sum_upper_v = float(sum_upper.iloc[-1]) if pd.notna(sum_upper.iloc[-1]) else sum_mean + sum_std
-    sum_lower_v = float(sum_lower.iloc[-1]) if pd.notna(sum_lower.iloc[-1]) else sum_mean - sum_std
-
-    coverage_upper_v = float(coverage10_upper.iloc[-1]) if not coverage10_upper.empty and pd.notna(coverage10_upper.iloc[-1]) else 5
-    coverage_lower_v = float(coverage10_lower.iloc[-1]) if not coverage10_lower.empty and pd.notna(coverage10_lower.iloc[-1]) else 3
-
-    if latest_sum > sum_upper_v:
-        sum_state = "OVERHEAT"
-    elif latest_sum < sum_lower_v:
-        sum_state = "COOL"
+            print(f"  {key:20s}: {value:8d}")
     else:
-        sum_state = "NORMAL"
+        print(f"  {key:20s}: {value}")
 
-    if latest_cov10 >= coverage_upper_v:
-        coverage_state = "OVERHEAT"
-    elif latest_cov10 <= coverage_lower_v:
-        coverage_state = "COOL"
+print("\n\n3개 이상 폭포 사례 (상위 15개):")
+print("-" * 80)
+print("회차    당첨번호           폭포길이")
+print("-" * 80)
+for idx, row in waterfall_result['waterfall_3_plus'].iterrows():
+    nums_str = ",".join(map(str, row['numbers']))
+    print(f"{row['draw']:<6} {nums_str:<25} {row['max_waterfall_length']}")
+
+print("\n예시: 폭포 길이 4 = [1,2,3,4] 같은 4개 연속 번호")
+
+
+# 패턴 3: 각 회차별 당첨번호 건너띔 기간 합계
+print("\n📊 [패턴 3] 각 회차별 건너띔 기간 합계의 패턴\n")
+skip_sum_result = advanced.get_skip_period_sum()
+
+print("건너띔 기간 합계 통계:")
+print("-" * 50)
+for key, value in skip_sum_result['stats'].items():
+    print(f"  {key:15s}: {value:8.2f}")
+
+print("\n\n건너띔 합계 상위 10회:")
+print("-" * 50)
+print(skip_sum_result['top_skip'].to_string(index=False))
+
+print("\n\n건너띔 합계 하위 10회 (안정적인 조합):")
+print("-" * 50)
+print(skip_sum_result['bottom_skip'].to_string(index=False))
+
+
+# 패턴 2: 낙첨 후 10회 기준으로 당첨 패턴
+print("\n📊 [패턴 2] 낙첨 후 10회 기준 당첨 패턴 분석\n")
+gap_result = advanced.get_gap_pattern()
+
+print(f"10회 이내 재당첨된 번호: {len(gap_result['short_gap_summary'])}개")
+print("-" * 70)
+
+short_gap_nums = sorted(gap_result['short_gap_summary'].items(), 
+                        key=lambda x: x[1]['count'], reverse=True)[:15]
+
+print(f"{'번호':<6} {'재당첨회':<8} {'평균건너띔':<10} {'건너띔패턴':<30}")
+print("-" * 70)
+
+for num, info in short_gap_nums:
+    gap_pattern = str(sorted(info['gaps']))[:25]
+    print(f"{num:<6} {info['count']:<8} {info['avg']:<10.1f} {gap_pattern}")
+
+print(f"\n\n10회 초과 건너띔 번호: {len(gap_result['long_gap_summary'])}개")
+print("-" * 70)
+
+long_gap_nums = sorted(gap_result['long_gap_summary'].items(), 
+                       key=lambda x: x[1]['count'], reverse=True)[:15]
+
+print(f"{'번호':<6} {'장기건너띔':<8} {'평균건너띔':<10} {'최대건너띔':<10}")
+print("-" * 70)
+
+for num, info in long_gap_nums:
+    max_gap = max(info['gaps']) if info['gaps'] else 0
+    print(f"{num:<6} {info['count']:<8} {info['avg']:<10.1f} {max_gap:<10}")
+
+
+# 패턴 1: 당첨번호 합계의 패턴
+print("\n📊 [패턴 1] 당첨번호 합계 상세 분석\n")
+sum_result = advanced.get_sum_pattern()
+
+print("당첨번호 합계 통계량:")
+print("-" * 50)
+for key, value in sum_result['stats'].items():
+    if isinstance(value, float):
+        print(f"  {key:15s}: {value:8.2f}")
     else:
-        coverage_state = "NORMAL"
-
-    if latest_odd in [2, 3, 4]:
-        odd_state = "BALANCED"
-    elif latest_odd <= 1:
-        odd_state = "EVEN_HEAVY"
-    else:
-        odd_state = "ODD_HEAVY"
-
-    if latest_high in [2, 3, 4]:
-        highlow_state = "BALANCED"
-    elif latest_high <= 1:
-        highlow_state = "LOW_HEAVY"
-    else:
-        highlow_state = "HIGH_HEAVY"
-
-    return {
-        "sum_state": sum_state,
-        "coverage_state": coverage_state,
-        "odd_state": odd_state,
-        "highlow_state": highlow_state,
-        "latest_sum": latest_sum,
-        "latest_cov10": latest_cov10,
-    }
-
-
-state = state_engine()
-
-
-def adaptive_weights_from_state(state):
-    weights = {
-        "prob": 1.0,
-        "pair": 1.0,
-        "skip": 1.0,
-        "neighbor": 1.0,
-        "repeater": 1.0,
-        "tail": 1.0,
-        "decade": 1.0,
-        "gap": 1.0,
-        "coverage": 1.0,
-        "meanrev": 1.0,
-        "cluster": 1.0,
-    }
-
-    if state["sum_state"] == "OVERHEAT":
-        weights["meanrev"] = 1.2
-    elif state["sum_state"] == "COOL":
-        weights["meanrev"] = 1.15
-
-    if state["coverage_state"] == "OVERHEAT":
-        weights["coverage"] = 1.15
-    elif state["coverage_state"] == "COOL":
-        weights["coverage"] = 1.05
-
-    if state["odd_state"] == "BALANCED":
-        weights["neighbor"] = 1.05
-    if state["highlow_state"] == "BALANCED":
-        weights["pair"] = 1.05
-
-    return weights
-
-
-weights = adaptive_weights_from_state(state)
-
-
-# =====================================================
-# ELITE 번호 풀 / 조합 생성
-# =====================================================
-
-
-def build_top20(prob):
-    scores = {}
-    prob_dict = dict(prob)
-
-    for n in range(1, 46):
-        score = 0.0
-        score += prob_dict.get(n, 0.0) * 50
-
-        skip = skip_map.get(n, 0)
-        if 2 <= skip <= 15:
-            score += 8
-
-        if n in neighbors:
-            score += 5
-
-        if n in last_row:
-            score += 5
-
-        pair_bonus = 0
-        for m in range(1, 46):
-            pair = tuple(sorted((n, m)))
-            pair_bonus += pair_matrix.get(pair, 0)
-        score += pair_bonus * 0.01
-
-        scores[n] = score
-
-    return sorted(scores, key=scores.get, reverse=True)[:20]
-
-
-
-def fitness(combo, prob_dict):
-    combo = sorted(map(int, combo))
-
-    if not basic_filter(combo):
-        return 0.0
-
-    score = 0.0
-    score += sum(prob_dict.get(n, 0.0) for n in combo) * weights["prob"]
-
-    if check_sum(combo):
-        score += 10
-    if check_odd_even(combo):
-        score += 8
-    if check_high_low(combo):
-        score += 8
-
-    score += sum(n in neighbors for n in combo) * 4 * weights["neighbor"]
-    score += sum(n in last_row for n in combo) * 4 * weights["repeater"]
-    score += sum(max(0, 12 - skip_map.get(n, 0)) for n in combo) * weights["skip"]
-    score += pair_score(combo) * 0.03 * weights["pair"]
-    score += cluster_score(combo) * weights["cluster"]
-    score += coverage_score(combo) * weights["coverage"]
-    score += mean_reversion_score(combo) * weights["meanrev"]
-
-    if check_tail(combo):
-        score += 5 * weights["tail"]
-    if check_decade(combo):
-        score += 5 * weights["decade"]
-    if check_gap(combo):
-        score += 5 * weights["gap"]
-
-    return score
-
-
-
-def super_filter(combo):
-    return (
-        check_sum(combo)
-        and check_odd_even(combo)
-        and check_high_low(combo)
-        and check_neighbor(combo)
-        and check_repeater(combo)
-        and check_tail(combo)
-        and check_decade(combo)
-        and check_gap(combo)
-        and check_skip_pattern(combo)
-    )
-
-
-
-def generate_elite(prob, elite_pool_size: int = 8):
-    prob_dict = dict(prob)
-    top20 = build_top20(prob)
-    elite_pool = top20[:elite_pool_size]
-
-    anchor = elite_pool[:3] if len(elite_pool) >= 3 else elite_pool[:]
-    raw = []
-
-    for _ in range(1200):
-        if len(elite_pool) >= 6:
-            combo = set(anchor)
-            rest = list(set(elite_pool) - set(anchor))
-            while len(combo) < 6 and rest:
-                combo.add(random.choice(rest))
-            combo = sorted(combo)
-        else:
-            combo = sorted(random.sample(top20, 6))
-
-        if len(combo) != 6:
-            continue
-
-        if super_filter(combo):
-            score = fitness(combo, prob_dict)
-            raw.append((combo, score))
-
-    if not raw:
-        for _ in range(1200):
-            combo = sorted(random.sample(top20, 6))
-            if basic_filter(combo):
-                raw.append((combo, fitness(combo, prob_dict)))
-
-    raw = sorted(raw, key=lambda x: x[1], reverse=True)
-
-    final = []
-    for combo, score in raw:
-        is_dup = False
-        for exist, _ in final:
-            if len(set(combo) & set(exist)) >= 4:
-                is_dup = True
-                break
-        if not is_dup:
-            final.append((combo, score))
-        if len(final) >= 10:
-            break
-
-    return top20, elite_pool, final
-
-
-prob = predict_prob()
-prob_dict = dict(prob)
-top20, elite_pool, elite_final = generate_elite(prob, elite_pool_size=8)
-
-
-# =====================================================
-# 추천 이유 / 등급 / 스타일
-# =====================================================
-
-
-def grade_combo(score):
-    if score >= 90:
-        return "👑 ELITE"
-    if score >= 80:
-        return "🔥 A급"
-    if score >= 70:
-        return "⭐ B급"
-    if score >= 60:
-        return "👍 C급"
-    return "⚪ C급"
-
-
-
-def explain_combo(combo):
-    reasons = []
-    if check_sum(combo):
-        reasons.append("합계 안정")
-    if check_odd_even(combo):
-        reasons.append("홀짝 균형")
-    if check_high_low(combo):
-        reasons.append("고저 균형")
-    if check_neighbor(combo):
-        reasons.append("이웃 숫자")
-    if check_repeater(combo):
-        reasons.append("연번/재출현")
-    if check_skip_pattern(combo):
-        reasons.append("Skip LN 균형")
-    if check_tail(combo):
-        reasons.append("끝자리 분산")
-    if check_decade(combo):
-        reasons.append("십진 구간 분산")
-    if check_gap(combo):
-        reasons.append("Gap 패턴")
-    return reasons
-
-
-
-def style_numbers(combo):
-    html = ""
-    for n in combo:
-        if n <= 10:
-            color = "#fbc400"
-        elif n <= 20:
-            color = "#69c8f2"
-        elif n <= 30:
-            color = "#ff7272"
-        elif n <= 40:
-            color = "#aaaaaa"
-        else:
-            color = "#b0d840"
-
-        html += f"""
-        <span style="
-            display:inline-block;
-            background:{color};
-            color:black;
-            padding:10px 14px;
-            margin:4px;
-            border-radius:999px;
-            min-width:42px;
-            text-align:center;
-            font-weight:700;
-            box-shadow:0 1px 4px rgba(0,0,0,.12);
-        ">{n}</span>
-        """
-    return html
-
-
-# =====================================================
-# Walk-Forward Backtest / Diversity / State Report
-# =====================================================
-
-
-def build_context(train_df: pd.DataFrame):
-    t_freq = get_number_frequency(train_df)
-    t_skip_map = build_skip_map(train_df)
-    t_pair_matrix = build_pair_matrix(train_df)
-    t_last_row = list(map(int, train_df.iloc[-1].values))
-    t_neighbors = get_neighbors(t_last_row)
-    t_sum_series = pd.Series([sum(map(int, row)) for row in train_df.values])
-    t_sum_ma50 = t_sum_series.rolling(50).mean()
-    t_sum_std50 = t_sum_series.rolling(50).std()
-    t_sum_upper = t_sum_ma50 + t_sum_std50
-    t_sum_lower = t_sum_ma50 - t_sum_std50
-
-    t_recent5_nums = set(train_df.tail(5).values.flatten())
-    t_recent10_nums = set(train_df.tail(10).values.flatten())
-
-    t_past_skip_sums = [sum(t_skip_map.get(int(n), 0) for n in row) for row in train_df.values]
-    t_skip_mean = float(np.mean(t_past_skip_sums)) if t_past_skip_sums else 0.0
-    t_skip_std = float(np.std(t_past_skip_sums)) if t_past_skip_sums else 0.0
-    t_skip_low = t_skip_mean - t_skip_std
-    t_skip_high = t_skip_mean + t_skip_std
-
-    t_features = make_features(train_df)
-    if len(train_df) >= 2:
-        n_clusters_local = min(5, len(train_df))
-        km = KMeans(n_clusters=n_clusters_local, random_state=42, n_init=10)
-        lbls = km.fit_predict(t_features)
-        t_current_cluster = int(lbls[-1])
-        t_cluster_centroid = km.cluster_centers_[t_current_cluster]
-    else:
-        t_current_cluster = 0
-        t_cluster_centroid = None
-
-    return {
-        "df": train_df,
-        "freq": t_freq,
-        "skip_map": t_skip_map,
-        "pair_matrix": t_pair_matrix,
-        "last_row": t_last_row,
-        "neighbors": t_neighbors,
-        "sum_series": t_sum_series,
-        "sum_ma50": t_sum_ma50,
-        "sum_std50": t_sum_std50,
-        "sum_upper": t_sum_upper,
-        "sum_lower": t_sum_lower,
-        "recent5_nums": t_recent5_nums,
-        "recent10_nums": t_recent10_nums,
-        "skip_low": t_skip_low,
-        "skip_high": t_skip_high,
-        "current_cluster": t_current_cluster,
-        "cluster_centroid": t_cluster_centroid,
-    }
-
-
-
-def adaptive_weights_from_context(ctx):
-    latest_sum = int(ctx["sum_series"].iloc[-1])
-    sum_upper_v = float(ctx["sum_upper"].iloc[-1]) if pd.notna(ctx["sum_upper"].iloc[-1]) else float(ctx["sum_series"].mean())
-    sum_lower_v = float(ctx["sum_lower"].iloc[-1]) if pd.notna(ctx["sum_lower"].iloc[-1]) else float(ctx["sum_series"].mean())
-
-    latest_cov10 = int(len(set(df.tail(10).values.flatten()) & set(map(int, df.iloc[-1].values)))) if len(df) >= 10 else 0
-
-    sum_state = "NORMAL"
-    if latest_sum > sum_upper_v:
-        sum_state = "OVERHEAT"
-    elif latest_sum < sum_lower_v:
-        sum_state = "COOL"
-
-    coverage_state = "NORMAL"
-    if latest_cov10 >= 5:
-        coverage_state = "OVERHEAT"
-    elif latest_cov10 <= 3:
-        coverage_state = "COOL"
-
-    odd_state = "BALANCED" if sum(map(int, df.iloc[-1].values)) % 2 in [2, 3, 4] else "BIAS"
-    highlow_state = "BALANCED" if sum(n <= 23 for n in map(int, df.iloc[-1].values)) in [2, 3, 4] else "BIAS"
-
-    weights = {
-        "prob": 1.0,
-        "pair": 1.0,
-        "skip": 1.0,
-        "neighbor": 1.0,
-        "repeater": 1.0,
-        "tail": 1.0,
-        "decade": 1.0,
-        "gap": 1.0,
-        "coverage": 1.0,
-        "meanrev": 1.0,
-        "cluster": 1.0,
-    }
-
-    if sum_state == "OVERHEAT":
-        weights["meanrev"] = 1.2
-    elif sum_state == "COOL":
-        weights["meanrev"] = 1.15
-
-    if coverage_state == "OVERHEAT":
-        weights["coverage"] = 1.15
-    elif coverage_state == "COOL":
-        weights["coverage"] = 1.05
-
-    if odd_state == "BALANCED":
-        weights["neighbor"] = 1.05
-    if highlow_state == "BALANCED":
-        weights["pair"] = 1.05
-
-    return {
-        "sum_state": sum_state,
-        "coverage_state": coverage_state,
-        "odd_state": odd_state,
-        "highlow_state": highlow_state,
-        "latest_sum": latest_sum,
-        "latest_cov10": latest_cov10,
-        "weights": weights,
-    }
-
-
-state = adaptive_weights_from_context(build_context(df))
-weights = state["weights"]
-
-
-def diversity_ok(candidate, selected):
-    for existed, _ in selected:
-        if len(set(candidate) & set(existed)) >= 5:
-            return False
-    return True
-
-
-@st.cache_data(ttl=3600)
-def walk_forward_backtest(data_signature: str, folds: int = 10):
-    if len(df) < 60:
-        return []
-
-    results = []
-    start = max(50, len(df) - folds)
-
-    for i in range(start, len(df)):
-        train_df = df.iloc[:i].reset_index(drop=True)
-        test_row = set(map(int, df.iloc[i].values))
-        train_ctx = build_context(train_df)
-        train_state = adaptive_weights_from_context(train_ctx)
-        train_weights = train_state["weights"]
-
-        t_freq = train_ctx["freq"]
-        t_skip_map = train_ctx["skip_map"]
-        t_pair_matrix = train_ctx["pair_matrix"]
-        t_neighbors = train_ctx["neighbors"]
-        t_last_row = train_ctx["last_row"]
-        t_sum_series = train_ctx["sum_series"]
-        t_sum_ma50 = train_ctx["sum_ma50"]
-        t_sum_std50 = train_ctx["sum_std50"]
-        t_sum_upper = train_ctx["sum_upper"]
-        t_sum_lower = train_ctx["sum_lower"]
-        t_recent5_nums = train_ctx["recent5_nums"]
-        t_recent10_nums = train_ctx["recent10_nums"]
-        t_cluster_centroid = train_ctx["cluster_centroid"]
-
-        def t_pair_score(combo):
-            score = 0
-            for a in range(len(combo)):
-                for b in range(a + 1, len(combo)):
-                    pair = tuple(sorted((int(combo[a]), int(combo[b]))))
-                    score += t_pair_matrix.get(pair, 0)
-            return score
-
-        def t_cluster_score(combo):
-            if t_cluster_centroid is None:
-                return 0.0
-            feat = np.array([
-                sum(combo),
-                sum(n % 2 for n in combo),
-                sum(n <= 23 for n in combo),
-                max(combo) - min(combo),
-            ], dtype=float)
-            dist = float(np.linalg.norm(feat - t_cluster_centroid))
-            return max(0.0, 10.0 - dist)
-
-        def t_coverage_score(combo):
-            r5 = sum(n in t_recent5_nums for n in combo)
-            r10 = sum(n in t_recent10_nums for n in combo)
-            score = 0
-            if 2 <= r5 <= 3:
-                score += 8
-            if 4 <= r10 <= 5:
-                score += 12
-            return score
-
-        def t_mean_reversion_score(combo):
-            combo_sum = sum(combo)
-            latest_sum = t_sum_series.iloc[-1]
-            current_ma50 = t_sum_ma50.iloc[-1]
-            current_upper = t_sum_upper.iloc[-1]
-            current_lower = t_sum_lower.iloc[-1]
-            score = 0
-            if pd.notna(current_upper) and latest_sum > current_upper and pd.notna(current_ma50) and combo_sum < current_ma50:
-                score += 10
-            elif pd.notna(current_lower) and latest_sum < current_lower and pd.notna(current_ma50) and combo_sum > current_ma50:
-                score += 10
-            return score
-
-        def t_basic_filter(combo):
-            combo = sorted(map(int, combo))
-            for row in train_df.values:
-                if combo == sorted(map(int, row)):
-                    return False
-            if max(combo) - min(combo) == 5:
-                return False
-            tails = [n % 10 for n in combo]
-            if max(Counter(tails).values()) >= 3:
-                return False
-            return True
-
-        def t_fitness(combo):
-            combo = sorted(map(int, combo))
-            if not t_basic_filter(combo):
-                return 0.0
-            score = 0.0
-            total_freq = max(1, sum(t_freq.values()))
-            score += sum((t_freq.get(n, 0) / total_freq) for n in combo) * 50
-            score += sum(n in t_neighbors for n in combo) * 4 * train_weights["neighbor"]
-            score += sum(n in t_last_row for n in combo) * 4 * train_weights["repeater"]
-            score += sum(max(0, 12 - t_skip_map.get(n, 0)) for n in combo) * train_weights["skip"]
-            score += t_pair_score(combo) * 0.03 * train_weights["pair"]
-            score += t_cluster_score(combo) * train_weights["cluster"]
-            score += t_coverage_score(combo) * train_weights["coverage"]
-            score += t_mean_reversion_score(combo) * train_weights["meanrev"]
-            return score
-
-        top20_local = sorted(range(1, 46), key=lambda n: t_freq.get(n, 0), reverse=True)[:20]
-        elite_pool_local = top20_local[:8]
-        raw = []
-
-        for _ in range(800):
-            combo = sorted(random.sample(elite_pool_local if len(elite_pool_local) >= 6 else top20_local, 6))
-            score = t_fitness(combo)
-            raw.append((combo, score))
-
-        raw = sorted(raw, key=lambda x: x[1], reverse=True)
-        best = raw[0][0] if raw else sorted(random.sample(range(1, 46), 6))
-        hit = len(set(best) & test_row)
-        results.append(hit)
-
-    return results
-
-
-# =====================================================
-# UI
-# =====================================================
-
-st.sidebar.title("👤 관리자 / 상태")
-admin_mode = st.sidebar.checkbox("🔐 관리자 모드")
-admin_code_input = st.sidebar.text_input("관리자 코드", type="password")
-is_admin = admin_mode and (admin_code_input == ADMIN_CODE)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🔐 보안 상태")
-st.sidebar.success("✔ 입력 검증 활성화")
-st.sidebar.success("✔ 데이터 빈값 방어")
-st.sidebar.success("✔ API 실패 fallback")
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🧠 현재 상태")
-st.sidebar.write(f"데이터 회차 수: {len(df)}")
-st.sidebar.write(f"현재 군집: {current_cluster}")
-st.sidebar.write(f"합계 상태: {state['sum_state']}")
-st.sidebar.write(f"Coverage 상태: {state['coverage_state']}")
-st.sidebar.write(f"홀짝 상태: {state['odd_state']}")
-st.sidebar.write(f"고저 상태: {state['highlow_state']}")
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("📌 최근 회차", fetch_latest_round_number() or "fallback")
-with col2:
-    st.metric("🧠 현재 군집", current_cluster)
-with col3:
-    st.metric("🔥 ELITE 풀", 11)
-
-st.subheader("🔥 핵심 압축 번호 TOP20")
-st.markdown(style_numbers(top20), unsafe_allow_html=True)
-
-if is_admin:
-    st.subheader("🔐 관리자 전용 ELITE 풀 (Top 10)")
-    st.markdown(style_numbers(elite_pool), unsafe_allow_html=True)
-
-    admin_elite_final = [(combo, score) for combo, score in elite_final if score >= 95]
-    st.subheader("👑 관리자 전용 최강 조합 TOP10")
-    st.caption("관리자 강조 기준: score >= 95")
-
-    if admin_elite_final:
-        for i, (combo, score) in enumerate(admin_elite_final[:10], 1):
-            grade = grade_combo(score)
-            reasons = explain_combo(combo)
-            st.markdown(f"## {i}. {grade}")
-            st.markdown(style_numbers(combo), unsafe_allow_html=True)
-            st.write(f"💯 점수: {round(score, 2)}")
-            st.write("✔ 추천 이유:", ", ".join(reasons) if reasons else "기본 조건 충족")
-            st.progress(min(score / 100, 1.0))
-            st.markdown("---")
-    else:
-        st.warning("score >= 95 인 최강 조합이 없습니다. 현재 상위 조합을 대신 표시합니다.")
-        for i, (combo, score) in enumerate(elite_final[:10], 1):
-            grade = grade_combo(score)
-            reasons = explain_combo(combo)
-            st.markdown(f"## {i}. {grade}")
-            st.markdown(style_numbers(combo), unsafe_allow_html=True)
-            st.write(f"💯 점수: {round(score, 2)}")
-            st.write("✔ 추천 이유:", ", ".join(reasons) if reasons else "기본 조건 충족")
-            st.progress(min(score / 100, 1.0))
-            st.markdown("---")
+        print(f"  {key:15s}: {value}")
+
+print("\n상위 15개 합계별 빈도:")
+print("-" * 50)
+print(sum_result['distribution'].to_string(index=False))
+
+
+from analysis.advanced_analysis import AdvancedLottoAnalysis
+
+# 고급 분석 객체 생성
+advanced = AdvancedLottoAnalysis(data)
+
+# 종합 분석 보고서 생성
+advanced.generate_comprehensive_report()
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+
+# 1. 건너띔 합계 시계열
+ax = axes[0, 0]
+ax.plot(range(1, len(skip_analyzer.skip_sums) + 1), skip_analyzer.skip_sums, 
+        marker='o', markersize=3, linewidth=1.5, label='건너띔 합계', color='steelblue', alpha=0.7)
+ax.axhline(np.mean(skip_analyzer.skip_sums), color='red', linestyle='--', linewidth=2, 
+           label=f'평균: {np.mean(skip_analyzer.skip_sums):.0f}')
+
+# 트렌드선 추가
+from scipy.stats import linregress
+x = np.arange(len(skip_analyzer.skip_sums))
+slope, intercept, _, _, _ = linregress(x, skip_analyzer.skip_sums)
+trendline = slope * x + intercept
+ax.plot(range(1, len(skip_analyzer.skip_sums) + 1), trendline, 
+        linestyle='-', linewidth=2, label=f'추세선 (기울기: {slope:.4f})', color='green', alpha=0.8)
+
+ax.set_xlabel('회차')
+ax.set_ylabel('건너띔 기간 합계')
+ax.set_title('건너띔 합계 시계열 추이', fontweight='bold')
+ax.legend()
+ax.grid(alpha=0.3)
+
+# 2. 이동평균
+ax = axes[0, 1]
+trend = skip_analyzer.get_trend_analysis(window=10)
+moving_avg = trend['moving_average']
+ax.plot(range(1, len(skip_analyzer.skip_sums) + 1), skip_analyzer.skip_sums, 
+        alpha=0.3, label='원본', color='gray')
+ax.plot(range(1, len(skip_analyzer.skip_sums) + 1), moving_avg, 
+        linewidth=2, label='10회 이동평균', color='darkblue')
+ax.set_xlabel('회차')
+ax.set_ylabel('건너띔 합계')
+ax.set_title('이동평균으로 보는 평활화된 추세', fontweight='bold')
+ax.legend()
+ax.grid(alpha=0.3)
+
+# 3. 범위 분포
+ax = axes[1, 0]
+classification = skip_analyzer.get_range_classification()
+categories = list(classification.keys())
+counts = [classification[c]['count'] for c in categories]
+colors_dist = ['green', 'lightgreen', 'orange', 'red']
+bars = ax.bar(range(len(categories)), counts, color=colors_dist, edgecolor='black', alpha=0.7)
+ax.set_xticks(range(len(categories)))
+ax.set_xticklabels(categories, rotation=15, ha='right')
+ax.set_ylabel('회차 수')
+ax.set_title('범위별 회차 분포', fontweight='bold')
+ax.grid(axis='y', alpha=0.3)
+
+# 값 레이블 추가
+for bar in bars:
+    height = bar.get_height()
+    ax.text(bar.get_x() + bar.get_width()/2., height,
+            f'{int(height)}',
+            ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+# 4. 분포 히스토그램
+ax = axes[1, 1]
+ax.hist(skip_analyzer.skip_sums, bins=20, color='purple', edgecolor='black', alpha=0.7)
+ax.axvline(np.mean(skip_analyzer.skip_sums), color='red', linestyle='--', linewidth=2, 
+           label=f'평균: {np.mean(skip_analyzer.skip_sums):.0f}')
+ax.axvline(np.median(skip_analyzer.skip_sums), color='green', linestyle='--', linewidth=2, 
+           label=f'중앙값: {np.median(skip_analyzer.skip_sums):.0f}')
+ax.set_xlabel('건너띔 기간 합계')
+ax.set_ylabel('빈도')
+ax.set_title('건너띔 합계 분포 (히스토그램)', fontweight='bold')
+ax.legend()
+ax.grid(axis='y', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+print("\n✓ 건너띔 합계 심화 분석 시각화 완료")
+
+
+# 예측 인사이트
+print("\n🔮 예측 인사이트\n")
+predict = skip_analyzer.get_predictive_insights()
+
+print("최근 평균값:")
+print(f"  최근 5회: {predict['recent_5_avg']:.2f}")
+print(f"  최근 10회: {predict['recent_10_avg']:.2f}")
+print(f"  최근 20회: {predict['recent_20_avg']:.2f}")
+print(f"  전체 평균: {predict['overall_avg']:.2f}")
+
+print(f"\n현재 추세: {predict['trend']}")
+print(f"신호: {predict['signal']}")
+
+print(f"\n📍 예상 범위:")
+print(f"  하한: {predict['lower_bound']:.0f}")
+print(f"  상한: {predict['upper_bound']:.0f}")
+print(f"  예상 범위: {predict['predicted_range']}")
+
+print("\n💡 해석:")
+if predict['recent_5_avg'] > predict['overall_avg']:
+    print("  최근 건너띔이 증가 추세 → 좀 더 많은 번호를 피할 준비 필요")
 else:
-    st.subheader("👑 추천 결과")
-    public_view = elite_final[:3]
-    if public_view:
-        for i, (combo, score) in enumerate(public_view, 1):
-            grade = grade_combo(score)
-            reasons = explain_combo(combo)
-            st.markdown(f"## {i}. {grade}")
-            st.markdown(style_numbers(combo), unsafe_allow_html=True)
-            st.write(f"💯 점수: {round(score, 2)}")
-            st.write("✔ 추천 이유:", ", ".join(reasons) if reasons else "기본 조건 충족")
-            st.progress(min(score / 100, 1.0))
-            st.markdown("---")
-    else:
-        st.warning("추천 조합이 생성되지 않았습니다.")
+    print("  최근 건너띔이 감소 추세 → 좀 더 많은 번호를 도전할 수 있음")
 
 
-st.subheader("📈 합계 시계열 흐름 (rolling 50)")
-fig_sum = px.line(x=range(len(sum_series)), y=sum_series, title="합계 흐름")
-st.plotly_chart(fig_sum, use_container_width=True)
+# 극값 분석
+print("\n📊 극값 (Extreme Values) 분석\n")
+extreme = skip_analyzer.get_extreme_values(10)
 
-st.subheader("📈 최근10회 Coverage 흐름")
-if not coverage10_series.empty:
-    fig_cov = px.line(x=range(len(coverage10_series)), y=coverage10_series, title="최근10회 번호 포함 개수 흐름")
-    st.plotly_chart(fig_cov, use_container_width=True)
+print("🔥 상위 10개 (건너띔 합계 높음 - 어려운 회차):")
+print("-" * 50)
+print(extreme['top_n'].to_string(index=False))
+
+print("\n\n❄️ 하위 10개 (건너띔 합계 낮음 - 쉬운 회차):")
+print("-" * 50)
+print(extreme['bottom_n'].to_string(index=False))
+
+
+# 주기성 분석
+print("\n📊 주기성 (Cyclicity) 분석\n")
+cycle = skip_analyzer.get_cycle_analysis()
+
+if cycle['has_cyclicity']:
+    print("✓ 주기성 감지됨")
+    print(f"  주요 주기: {cycle['main_cycle']}회차")
+    print(f"  유의한 모든 주기: {cycle['significant_lags']}")
+    print(f"\n💡 해석:")
+    print(f"  약 {cycle['main_cycle']}회마다 패턴이 반복되는 경향이 있습니다")
 else:
-    st.info("Coverage 시계열은 데이터가 더 쌓이면 표시됩니다.")
+    print("✗ 주기성 감지 안 됨")
+    print("  → 건너띔 합계가 무작위성이 강함")
+    print("  → 특정 주기 패턴을 찾기 어려움")
 
-st.subheader("📊 백테스트 적중 분포")
-backtest_results = []
-for row in df.values[-50:]:
-    real = set(map(int, row))
-    for combo, _ in elite_final[:10]:
-        backtest_results.append(len(set(combo) & real))
 
-hit_counter = Counter(backtest_results)
-x_vals = list(range(7))
-y_vals = [hit_counter.get(i, 0) for i in x_vals]
+# 변동성 분석
+print("\n📊 변동성 (Volatility) 분석\n")
+volatility = skip_analyzer.get_volatility_analysis()
 
-fig_bt = px.bar(
-    x=x_vals,
-    y=y_vals,
-    title="적중 분포",
-    labels={"x": "적중 개수", "y": "횟수"}
-)
-st.plotly_chart(fig_bt, use_container_width=True)
+print(f"표준편차: {volatility['standard_deviation']:.2f}")
+print(f"변동성 계수 (CV): {volatility['coefficient_of_variation']:.2f}%")
+print(f"  → 평균 대비 {volatility['coefficient_of_variation']:.1f}% 정도 변함")
 
-hit4plus = sum(1 for x in backtest_results if x >= 4)
-if is_admin:
-    st.metric("4개 이상 적중 횟수", hit4plus)
-    st.caption("관리자 강조 기준: 백테스트 4개 이상 적중 구간")
+print(f"\n구간별 변동성:")
+print(f"  전반부: {volatility['first_half_std']:.2f}")
+print(f"  후반부: {volatility['second_half_std']:.2f}")
+print(f"  추세: {volatility['volatility_trend']}")
 
-st.subheader("📊 Walk-Forward Backtest")
-if is_admin and st.button("▶ 백테스트 실행"):
-    wf = walk_forward_backtest(str(df.shape) + str(df.iloc[-1].tolist()), folds=min(10, max(0, len(df) - 50)))
-    if wf:
-        st.write(f"평균 적중: {round(float(np.mean(wf)), 3)}")
-        st.write(f"최대 적중: {max(wf)}")
-        st.write(f"적중 분포: {Counter(wf)}")
-    else:
-        st.warning("백테스트를 수행할 데이터가 충분하지 않습니다.")
+print(f"\n회차간 변동:")
+print(f"  최대 변동: {volatility['max_change']:.0f}")
+print(f"  최소 변동: {volatility['min_change']:.0f}")
+print(f"  평균 변동: {volatility['avg_change']:.2f}")
 
-st.subheader("🧠 확률 필터 최적화 연구")
-st.info(
-    "현재 시스템은 단순 번호 추천이 아니라 '확률 패턴 공간 압축' 기반 AI 엔진입니다.")
+
+# 연속 상승/하강 분석
+print("\n📊 연속 상승/하강 구간 분석\n")
+consecutive = skip_analyzer.get_consecutive_analysis()
+
+print("📈 상승 패턴:")
+print(f"  최대 상승 연속: {consecutive['max_up_streak']}회차")
+print(f"  평균 상승 연속: {consecutive['avg_up_streak']:.1f}회차")
+
+print("\n📉 하강 패턴:")
+print(f"  최대 하강 연속: {consecutive['max_down_streak']}회차")
+print(f"  평균 하강 연속: {consecutive['avg_down_streak']:.1f}회차")
+
+print("\n💡 해석:")
+print(f"  상승이 {consecutive['max_up_streak']}회 연속으로 나타나는 경우가 있음")
+print(f"  → 건너띔이 계속 커지는 구간이 존재")
+
+
+# 트렌드 분석
+print("\n📈 시계열 트렌드 분석\n")
+trend = skip_analyzer.get_trend_analysis()
+
+print(f"전체 추세: {trend['trend_direction']}")
+print(f"기울기: {trend['slope']:.6f}")
+print(f"  → 회차당 평균 {trend['slope']:.2f} {'증가' if trend['slope'] > 0 else '감소'}")
+print(f"\n상승 회차: {trend['ups']}회 ({trend['up_percentage']:.1f}%)")
+print(f"하강 회차: {trend['downs']}회 ({trend['down_percentage']:.1f}%)")
+print(f"\n추세 강도: {trend['trend_strength']}")
+print(f"R² (설명력): {trend['r_squared']:.3f}")
+print(f"  → {trend['r_squared']*100:.1f}%의 변동을 추세로 설명 가능")
+
+
+# 범위 분류 상세 분석
+print("\n📊 건너띔 합계 범위별 상세 분류\n")
+classification = skip_analyzer.get_range_classification()
+
+for category, info in classification.items():
+    print(f"🔹 {category}")
+    print(f"   범위: {info['range']}")
+    print(f"   회차 수: {info['count']}회 ({info['percentage']:.1f}%)")
+    print(f"   회차: {info['indices'][:5]}" + ("..." if len(info['indices']) > 5 else ""))
+    print()
+
+
+from analysis.skip_sum_detailed import SkipSumPatternAnalysis
+
+# 건너띔 기간 합계 심화 분석
+skip_analyzer = SkipSumPatternAnalysis(data)
+
+# 상세 보고서 생성
+skip_analyzer.generate_detailed_report()
+
+
