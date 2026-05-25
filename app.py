@@ -6,6 +6,20 @@ import seaborn as sns
 import sys
 from pathlib import Path
 
+import sys
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from analysis.data_loader import LottoDataLoader
+from analysis.statistics import LottoStatistics
+from analysis.patterns import LottoPatternAnalysis
+from analysis.gail_howard import GailHowardStrategy
+from visualization.charts import LottoVisualizer
+from prediction.predictor import LottoPredictor
+
 # 프로젝트 모듈 임포트
 sys.path.insert(0, str(Path.cwd()))
 from analysis.data_loader import LottoDataLoader
