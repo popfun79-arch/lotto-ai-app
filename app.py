@@ -25,7 +25,7 @@ print('✓ 모든 라이브러리 임포트 완료')
 
 
 # 데이터 로드
-loader = LottoDataLoader('data/lotto_data.csv')
+loader = LottoDataLoader('data/lotto.csv')
 data = loader.load()
 data = loader.preprocess()
 
