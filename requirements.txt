@@ -11,3 +11,4 @@ statsmodels
 prophet
 tensorflow
 plotly
+beautifulsoup4
