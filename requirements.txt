@@ -12,3 +12,4 @@ prophet
 tensorflow
 plotly
 beautifulsoup4
+requests
