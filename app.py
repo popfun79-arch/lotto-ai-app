@@ -78,15 +78,31 @@ def validate(df):
         for i,c in enumerate(MAIN): row[c]=nums[i]
         return row
     out=out.apply(sorter,axis=1)
+    # 본번호는 1~45, 보너스는 미입력 데이터 호환을 위해 0~45 허용
     mask=np.ones(len(out),dtype=bool)
-    for c in [*MAIN,"bonus"]: mask &= out[c].between(1,45).to_numpy()
-    if not mask.all():
-        notes.append(f"범위 오류 행 {(~mask).sum()}개 제거")
-        out=out.loc[mask]
-    unique=out.apply(lambda r: len(set(int(r[c]) for c in MAIN))==6,axis=1)
-    if not unique.all():
-        notes.append(f"중복 본번호 행 {(~unique).sum()}개 제거")
-        out=out.loc[unique]
+    for c in MAIN:
+        mask &= out[c].between(1,45).to_numpy()
+    mask &= out["bonus"].between(0,45).to_numpy()
+
+    invalid_count=int((~mask).sum())
+    if invalid_count>0:
+        notes.append(f"범위 오류 행 {invalid_count}개 제거")
+        out=out.loc[mask].copy()
+
+    if out.empty:
+        raise ValueError(
+            "유효한 데이터가 없습니다. 본번호는 1~45, 보너스는 0~45인지 확인해 주세요."
+        )
+
+    unique=out.apply(
+        lambda r: len({int(r[c]) for c in MAIN})==6,
+        axis=1,
+    ).astype(bool)
+
+    duplicate_number_count=int((~unique).sum())
+    if duplicate_number_count>0:
+        notes.append(f"중복 본번호 행 {duplicate_number_count}개 제거")
+        out=out.loc[unique].copy()
     before=len(out)
     out=out.drop_duplicates("round",keep="last").sort_values("round").reset_index(drop=True)
     if len(out)<before: notes.append(f"중복 회차 {before-len(out)}개 제거")
