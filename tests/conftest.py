@@ -1,7 +1,9 @@
-import os
+from __future__ import annotations
+
 import sys
+from pathlib import Path
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+ROOT = Path(__file__).resolve().parents[1]
 
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
