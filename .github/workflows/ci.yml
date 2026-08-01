@@ -25,13 +25,29 @@ jobs:
       - name: 패키지 설치
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
+
+      - name: 프로젝트 구조 확인
+        run: |
+          pwd
+          find . -maxdepth 3 -type f | sort
+          python -c "import os, sys; print('cwd=', os.getcwd()); print('sys.path=', sys.path)"
 
       - name: Python 문법 검사
         run: |
           python -m py_compile app.py
           python -m py_compile update_lotto.py
+          python -m compileall -q lotto64
+
+      - name: lotto64 패키지 Import 검사
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -c "import lotto64; print('lotto64 import OK:', lotto64.__file__)"
+          python -c "from lotto64.utils.lotto_math import odd_count; print('submodule import OK:', odd_count([1,2,3,4,5,6]))"
 
       - name: 단위 테스트
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
-          pytest -q
+          python -m pytest -q
