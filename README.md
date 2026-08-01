@@ -1,50 +1,64 @@
-# Lotto64 Ultimate AI
+# Lotto64 Ultimate AI v3.0
 
-`popfun79-arch/lotto-ai-app` 저장소의 기존 파일을 교체하기 위한 실행형 프로젝트입니다.
+Streamlit, GitHub Actions, SQLite, GAP/EGR/CEC/DRC, 회차 DNA, 유사 회차, GA 조합 최적화, Walk-forward 백테스트와 가중치 탐색을 통합한 연구용 프로젝트입니다.
 
-## 교체되는 기존 파일
-- `app.py`
-- `lotto.csv`
-- `lotto_200.csv`
-- `requirements.txt`
-- `update_lotto.py`
+## 주요 기능
 
-## 새로 추가되는 파일
-- `README.md`
-- `data/lotto_all.csv`
-- `tests/test_smoke.py`
-- `.github/workflows/ci.yml`
-- `.streamlit/config.toml`
-
-## 포함 기능
-- 데이터 검증 및 컬럼 자동 정리
-- GAP 기간별 당첨 분포
-- 번호별 현재 GAP
-- EGR 실제 검증
+- CSV/JSON 업로드와 데이터 품질 검증
+- 자동 최신 회차 업데이트 시도
+- CSV와 SQLite 동기화
+- GAP 분포와 번호별 현재 GAP
+- EGR 회복률 검증
 - CEC·DRC 상태전이 검증
 - 회차 DNA와 유사 회차 검색
-- 후보 번호 15수·13수·11수
+- 후보 15수·13수·11수
+- 번호별 상대확률 지표와 설명
 - 안정형·균형형·공격형 TOP20
-- 구매용 5·10·20게임
-- 동일 난수 시드 기반 결과 재현
+- 유전자 알고리즘 기반 조합 최적화
+- Walk-forward 백테스트와 성능 그래프
+- 확률적 가중치 탐색
+- GitHub Actions CI
+- 주간 데이터 업데이트 Workflow
 
-## 보너스 번호 안내
-기존 `lotto_200.csv`에는 보너스 번호가 없으므로 마이그레이션 자료에서는 `bonus=0`입니다.
-보너스 전이 분석을 정확히 사용하려면 보너스 번호가 포함된 전체 CSV를 업로드하거나 다음 명령으로 교체하세요.
+> 로또는 무작위 추첨입니다. 이 프로젝트는 당첨을 보장하지 않으며 과거 데이터 연구와 가설 검증을 위한 도구입니다.
 
-```bash
-python update_lotto.py --import-csv 최신_전체데이터.csv
+## GitHub에 교체 업로드
+
+압축을 푼 뒤 저장소의 기존 내용을 백업하고, 이 프로젝트의 모든 파일과 폴더를 저장소 루트에 업로드합니다.
+
+최종 구조:
+
+```text
+lotto-ai-app/
+├─ app.py
+├─ update_lotto.py
+├─ requirements.txt
+├─ README.md
+├─ lotto64/
+├─ data/
+├─ reports/
+├─ tests/
+├─ .streamlit/
+└─ .github/workflows/
 ```
 
-## 실행
+## 로컬 실행
+
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Streamlit Cloud
+## Streamlit Community Cloud
+
 - Repository: `popfun79-arch/lotto-ai-app`
 - Branch: `main`
 - Main file path: `app.py`
 
-로또는 무작위 추첨입니다. 본 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.
+## 주간 데이터 자동 업데이트
+
+`.github/workflows/update_data.yml`은 매주 토요일 UTC 13:30에 실행되도록 설정되어 있습니다. 공식 사이트 응답 형식이 바뀌면 자동 수집이 실패할 수 있으며, 그 경우 CSV 업로드로 갱신하세요.
+
+## 테스트 수
+
+`tests/test_math.py`는 번호 1~45를 매개변수화해 180개 이상의 개별 검증 사례를 수행합니다.
