@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json, math, random
+from datetime import datetime
 from itertools import combinations
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
@@ -435,6 +436,39 @@ def optimize(df,trials=5,rounds=30,seed=SEED):
     return best,pd.DataFrame(hist).sort_values("objective",ascending=False)
 
 def csv_bytes(df): return df.to_csv(index=False).encode("utf-8-sig")
+
+def json_bytes(data):
+    return json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+
+def normalized_probability_table(scores):
+    """
+    번호 점수를 상대확률 지표로 변환합니다.
+    실제 추첨확률이 아니라 모델 내부의 상대 점수입니다.
+    """
+    out=scores.copy()
+    values=out["final_score"].astype(float)
+    shifted=values-values.min()+1e-9
+    out["relative_probability"]=shifted/shifted.sum()
+    out["relative_probability_pct"]=out["relative_probability"]*100
+    return out
+
+def backtest_report_payload(result, settings):
+    report={
+        "generated_at":datetime.now().isoformat(timespec="seconds"),
+        "settings":settings,
+        "summary":{
+            "rounds":int(len(result)),
+            "candidate_11_mean_hits":float(result["candidate_11_hits"].mean()),
+            "candidate_13_mean_hits":float(result["candidate_13_hits"].mean()),
+            "candidate_15_mean_hits":float(result["candidate_15_hits"].mean()),
+            "top_combo_mean_max_hit":float(result["top_combo_max_hit"].mean()),
+            "top_combo_3plus_rate":float(result["top_combo_3plus"].mean()),
+            "top_combo_4plus_rate":float(result["top_combo_4plus"].mean()),
+            "top_combo_5plus_rate":float(result["top_combo_5plus"].mean()),
+            "top_combo_6_rate":float(result["top_combo_6"].mean()),
+        },
+    }
+    return report
 def self_test():
     tests=[]
     for name,fn in [
@@ -510,9 +544,16 @@ with tabs[3]:
 
 with tabs[4]:
     scores=number_scores(analysis,egr_threshold=egr_threshold,similarity_k=similarity_k)
-    a,b,c=st.columns(3); a.code(", ".join(map(str,scores.head(15)["number"]))); b.code(", ".join(map(str,scores.head(13)["number"]))); c.code(", ".join(map(str,scores.head(11)["number"])))
+    scores=normalized_probability_table(scores)
+    a,b,c=st.columns(3)
+    a.markdown("#### 후보 15수"); a.code(", ".join(map(str,scores.head(15)["number"])))
+    b.markdown("#### 후보 13수"); b.code(", ".join(map(str,scores.head(13)["number"])))
+    c.markdown("#### 후보 11수"); c.code(", ".join(map(str,scores.head(11)["number"])))
     scores["grade"]=pd.qcut(scores["final_score"].rank(method="first"),5,labels=["E","D","C","B","A"])
-    st.dataframe(scores,use_container_width=True); st.download_button("점수 다운로드",csv_bytes(scores),"number_scores.csv")
+    display_cols=["number","grade","final_score","relative_probability_pct","current_gap"]+[c for c in scores.columns if c.startswith("score_")]
+    st.caption("상대확률(%)은 모델 내부 점수의 상대적 비중이며 실제 당첨확률이 아닙니다.")
+    st.dataframe(scores[display_cols],use_container_width=True)
+    st.download_button("점수 다운로드",csv_bytes(scores),"number_scores.csv")
 
 with tabs[5]:
     scores=number_scores(analysis,egr_threshold=egr_threshold,similarity_k=similarity_k)
@@ -529,12 +570,57 @@ with tabs[5]:
             st.write(f"**{count}게임**"); st.dataframe(d[["combination","final_score"]],use_container_width=True)
 
 with tabs[6]:
+    st.subheader("Walk-forward 백테스트")
+    st.write("각 대상 회차보다 이전 데이터만 사용합니다. 실행 결과는 현재 브라우저 세션에 보관됩니다.")
+
+    if "walk_forward_result" not in st.session_state:
+        st.session_state["walk_forward_result"]=None
+
     if st.button("Walk-forward 실행",type="primary"):
         try:
-            result=walk_forward(cleaned,min(backtest_rounds,max(1,len(cleaned)-60)),recent_window,min(candidate_count,18),10,int(seed))
-            st.dataframe(summary(result),use_container_width=True); st.dataframe(result,use_container_width=True)
-            st.download_button("백테스트 다운로드",csv_bytes(result),"walk_forward.csv")
-        except Exception as e: st.error(str(e))
+            actual_rounds=min(backtest_rounds,max(1,len(cleaned)-60))
+            result=walk_forward(
+                cleaned,
+                actual_rounds,
+                recent_window,
+                min(candidate_count,18),
+                10,
+                int(seed),
+            )
+            st.session_state["walk_forward_result"]=result
+        except Exception as e:
+            st.error(str(e))
+
+    result=st.session_state.get("walk_forward_result")
+    if result is not None and not result.empty:
+        report_settings={
+            "data_latest_round":int(cleaned["round"].max()),
+            "data_rows":int(len(cleaned)),
+            "train_window":int(recent_window),
+            "backtest_rounds":int(len(result)),
+            "candidate_count":int(min(candidate_count,18)),
+            "seed":int(seed),
+        }
+        report=backtest_report_payload(result,report_settings)
+
+        st.markdown("#### 성능 요약")
+        st.dataframe(summary(result),use_container_width=True)
+
+        st.markdown("#### 회차별 최고 적중 추이")
+        chart=result.set_index("round")[["candidate_11_hits","candidate_13_hits","candidate_15_hits","top_combo_max_hit"]]
+        st.line_chart(chart)
+
+        st.markdown("#### 누적 성공률")
+        cumulative=result[["top_combo_3plus","top_combo_4plus","top_combo_5plus","top_combo_6"]].expanding().mean()
+        cumulative.index=result["round"]
+        st.line_chart(cumulative)
+
+        st.markdown("#### 회차별 상세 결과")
+        st.dataframe(result,use_container_width=True)
+
+        d1,d2=st.columns(2)
+        d1.download_button("백테스트 CSV 다운로드",csv_bytes(result),"walk_forward.csv")
+        d2.download_button("백테스트 요약 JSON 다운로드",json_bytes(report),"walk_forward_report.json","application/json")
 
 with tabs[7]:
     trials=st.slider("탐색 횟수",3,12,5)
@@ -545,3 +631,7 @@ with tabs[7]:
             st.dataframe(history,use_container_width=True)
             st.download_button("가중치 JSON",json.dumps(best,ensure_ascii=False,indent=2).encode(),"best_weights.json","application/json")
         except Exception as e: st.error(str(e))
+
+
+st.divider()
+st.caption("Lotto64 Ultimate AI v2.1 · 재현 가능한 연구 및 검증용 앱")
