@@ -529,4 +529,3 @@ with tabs[7]:
             st.dataframe(history,use_container_width=True)
             st.download_button("가중치 JSON",json.dumps(best,ensure_ascii=False,indent=2).encode(),"best_weights.json","application/json")
         except Exception as e: st.error(str(e))
-
