@@ -10,6 +10,7 @@ from lotto64.analysis.egr import egr_backtest
 from lotto64.analysis.gap import current_gap_table, gap_distribution
 from lotto64.analysis.similarity import similar_rounds
 from lotto64.analysis.state import cec_drc_backtest
+from lotto64.analysis.sum_series import build_sum_series, compare_sum_windows, forecast_next_sum
 from lotto64.backtest.walk_forward import summarize, walk_forward
 from lotto64.config import RunConfig
 from lotto64.data.storage import load_best_available, sync_sqlite, write_csv
@@ -19,11 +20,12 @@ from lotto64.models.scoring import explain_number, number_scores
 from lotto64.recommend.combination import generate_ranked
 from lotto64.recommend.ga import ga_optimize
 from lotto64.recommend.portfolio import strategy_sets
+from lotto64.recommend.final_pattern import final_recommendation_bundle
 from lotto64.reports.reporting import build_backtest_report, csv_bytes, json_bytes
 
 st.set_page_config(page_title="Lotto64 Ultimate AI v3", page_icon="🍀", layout="wide")
-st.title("🍀 Lotto64 Ultimate AI v3.0")
-st.caption("데이터 · GAP · EGR · CEC/DRC · 회차 DNA · 유사 회차 · GA · Walk-forward · 가중치 탐색")
+st.title("🍀 Lotto64 Ultimate AI v4.0 Final Pattern")
+st.caption("데이터 · 합계 시계열 · GAP · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
 with st.sidebar:
@@ -65,8 +67,9 @@ analysis = cleaned.tail(min(recent_window, len(cleaned))).reset_index(drop=True)
 st.success(f"{source} / 전체 {len(cleaned)}회 / 분석 {len(analysis)}회")
 
 tabs = st.tabs([
-    "데이터 진단", "GAP·EGR", "CEC·DRC", "회차 DNA", "후보 번호",
-    "TOP20", "GA 최적화", "Walk-forward", "가중치 탐색", "설명",
+    "데이터 진단", "합계 시계열", "GAP·EGR", "CEC·DRC", "회차 DNA",
+    "후보 번호", "TOP20", "GA 최적화", "Walk-forward", "가중치 탐색",
+    "설명", "Final Pattern",
 ])
 
 with tabs[0]:
@@ -89,6 +92,51 @@ with tabs[0]:
     st.download_button("정리 데이터 다운로드", csv_bytes(cleaned), "lotto_all_cleaned.csv")
 
 with tabs[1]:
+    st.subheader("회차별 조합 번호 합계 시계열")
+    sum_series = build_sum_series(analysis, state_window=50)
+    forecast = forecast_next_sum(
+        analysis,
+        state_window=50,
+        transition_lookback=min(100, max(30, len(analysis) - 1)),
+    )
+
+    a, b, c, d = st.columns(4)
+    a.metric("최근 당첨 합계", forecast.current_sum)
+    b.metric("현재 합계 상태", forecast.current_state)
+    c.metric("다음 합계 중심값", f"{forecast.target_center:.1f}")
+    d.metric(
+        "다음 핵심 구간",
+        f"{forecast.target_low:.0f}~{forecast.target_high:.0f}",
+    )
+
+    st.caption(
+        f"확장 구간 {forecast.wide_low:.0f}~{forecast.wide_high:.0f} · "
+        f"동일 상태 전이 표본 {forecast.matched_transitions}회 · "
+        "미래 데이터 없이 이전 회차만 사용"
+    )
+
+    chart = sum_series.tail(min(100, len(sum_series))).set_index("round")[
+        ["sum", "ma5", "ma10", "ma20"]
+    ]
+    st.line_chart(chart)
+
+    compare = compare_sum_windows(analysis, window=50)
+    if not compare.empty:
+        st.markdown("#### 최근 50회 vs 이전 50회")
+        st.dataframe(compare, use_container_width=True)
+
+    st.markdown("#### 최근 합계 상태")
+    st.dataframe(
+        sum_series.tail(30)[
+            [
+                "round", "sum", "delta1", "ma5", "ma10", "ma20",
+                "std20", "z20", "sum_state",
+            ]
+        ],
+        use_container_width=True,
+    )
+
+with tabs[2]:
     dist = gap_distribution(analysis)
     st.bar_chart(dist.set_index("gap")["count"])
     st.dataframe(current_gap_table(analysis).sort_values("current_gap", ascending=False), use_container_width=True)
@@ -104,7 +152,7 @@ with tabs[1]:
         c.metric("평균 회복 기간", f"{mean_recovery:.2f}회" if pd.notna(mean_recovery) else "자료 없음")
         st.dataframe(egr, use_container_width=True)
 
-with tabs[2]:
+with tabs[3]:
     dna = build_dna(analysis)
     transitions = cec_drc_backtest(dna)
     cec = transitions[transitions["cec_event"]]
@@ -120,7 +168,7 @@ with tabs[2]:
     st.line_chart(states.set_index("round")[["gap_sum", "gap_sum_ma5", "gap_sum_ma10"]])
     st.dataframe(states.tail(60), use_container_width=True)
 
-with tabs[3]:
+with tabs[4]:
     dna = build_dna(analysis)
     st.dataframe(dna.tail(30), use_container_width=True)
     sim = similar_rounds(dna, similarity_k)
@@ -129,7 +177,7 @@ with tabs[3]:
     else:
         st.dataframe(sim, use_container_width=True)
 
-with tabs[4]:
+with tabs[5]:
     scores = number_scores(
         analysis,
         egr_threshold=egr_threshold,
@@ -147,7 +195,7 @@ with tabs[4]:
     st.dataframe(scores, use_container_width=True)
     st.download_button("번호 점수 다운로드", csv_bytes(scores), "number_scores.csv")
 
-with tabs[5]:
+with tabs[6]:
     scores = number_scores(analysis, egr_threshold=egr_threshold, similarity_k=similarity_k)
     with st.spinner("일반 조합 생성 중..."):
         ranked = generate_ranked(
@@ -173,7 +221,7 @@ with tabs[5]:
             key=f"normal_{name}",
         )
 
-with tabs[6]:
+with tabs[7]:
     st.subheader("유전자 알고리즘 조합 최적화")
     population = st.slider("개체 수", 100, 1000, 400, 100)
     generations = st.slider("세대 수", 5, 60, 25, 5)
@@ -196,7 +244,7 @@ with tabs[6]:
             st.dataframe(display, use_container_width=True)
             st.download_button("GA TOP20 다운로드", csv_bytes(display), "ga_top20.csv")
 
-with tabs[7]:
+with tabs[8]:
     st.subheader("Walk-forward 백테스트")
     if "walk_result" not in st.session_state:
         st.session_state["walk_result"] = None
@@ -227,6 +275,16 @@ with tabs[7]:
             "candidate_11_hits", "candidate_13_hits",
             "candidate_15_hits", "top_combo_max_hit",
         ]])
+
+        st.markdown("#### 합계 시계열 예측 검증")
+        st.line_chart(result.set_index("round")[[
+            "actual_sum", "predicted_sum_center",
+            "predicted_sum_low", "predicted_sum_high",
+        ]])
+        sa, sb, sc = st.columns(3)
+        sa.metric("합계 중심 MAE", f"{result['sum_abs_error'].mean():.2f}")
+        sb.metric("핵심 구간 적중률", f"{result['sum_in_core_band'].mean():.1%}")
+        sc.metric("확장 구간 적중률", f"{result['sum_in_wide_band'].mean():.1%}")
         cumulative = result[[
             "top_combo_3plus", "top_combo_4plus",
             "top_combo_5plus", "top_combo_6",
@@ -244,7 +302,7 @@ with tabs[7]:
         a.download_button("백테스트 CSV", csv_bytes(result), "walk_forward.csv")
         b.download_button("요약 JSON", json_bytes(report), "walk_forward_report.json", "application/json")
 
-with tabs[8]:
+with tabs[9]:
     st.subheader("가중치 확률적 탐색")
     trials = st.slider("탐색 횟수", 3, 20, 6)
 
@@ -277,7 +335,7 @@ with tabs[8]:
             "application/json",
         )
 
-with tabs[9]:
+with tabs[10]:
     st.subheader("번호 점수 설명")
     scores = number_scores(analysis, egr_threshold=egr_threshold, similarity_k=similarity_k)
     selected_number = st.selectbox("번호 선택", scores["number"].astype(int).tolist())
@@ -287,5 +345,58 @@ with tabs[9]:
     st.dataframe(explain_number(row), use_container_width=True)
 
 st.divider()
-st.caption("Lotto64 Ultimate AI v3.0 · 재현 가능한 연구 및 검증용 플랫폼")
+st.caption("Lotto64 Ultimate AI v4.0 · Python + Pattern Master + 합계/GAP 시계열")
 
+
+
+with tabs[11]:
+    st.subheader("Final Pattern — Python + Games-Out/Skip + 합계 시계열")
+    st.caption(
+        "Drawings Since Hit·Skip/Hit·Skips Due·Number Groups·Last Digits·"
+        "Odd/Even·High/Low 성격의 패턴과 Python 시계열/GAP/DNA를 결합합니다."
+    )
+
+    with st.spinner("Final Pattern 분석 중..."):
+        final_bundle = final_recommendation_bundle(analysis)
+
+    final_candidates = final_bundle["candidate_sets"]
+    final_context = final_bundle["context"]
+    final_portfolio = final_bundle["portfolio"].copy()
+
+    c1, c2, c3 = st.columns(3)
+    c1.markdown("#### 후보 11수")
+    c1.code(", ".join(map(str, final_candidates[11])))
+    c2.markdown("#### 후보 13수")
+    c2.code(", ".join(map(str, final_candidates[13])))
+    c3.markdown("#### 후보 15수")
+    c3.code(", ".join(map(str, final_candidates[15])))
+
+    sum_fc = final_context["sum_forecast"]
+    gap_fc = final_context["gap_sum_forecast"]
+
+    s1, s2, s3, s4 = st.columns(4)
+    s1.metric("최근 번호합", f"{sum_fc['current_sum']:.0f}")
+    s2.metric(
+        "다음 번호합 핵심구간",
+        f"{sum_fc['target_low']:.0f}~{sum_fc['target_high']:.0f}",
+    )
+    s3.metric("최근 GAP합", f"{gap_fc['current_gap_sum']:.0f}")
+    s4.metric(
+        "다음 GAP합 핵심구간",
+        f"{gap_fc['target_low']:.0f}~{gap_fc['target_high']:.0f}",
+    )
+
+    if not final_portfolio.empty:
+        final_portfolio["combination"] = final_portfolio["combination"].apply(
+            lambda values: " ".join(map(str, values))
+        )
+        st.markdown("#### 베스트 20 조합")
+        st.dataframe(final_portfolio, use_container_width=True)
+
+        for size in (5, 10, 15, 20):
+            st.download_button(
+                f"베스트 {size}조합 CSV",
+                csv_bytes(final_portfolio.head(size)),
+                f"final_pattern_top{size}.csv",
+                key=f"final_top_{size}",
+            )
