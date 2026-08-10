@@ -1,64 +1,38 @@
-# Lotto64 Ultimate AI v3.0
+# Lotto64 Ultimate AI v4.0 — Final Pattern Edition
 
-Streamlit, GitHub Actions, SQLite, GAP/EGR/CEC/DRC, 회차 DNA, 유사 회차, GA 조합 최적화, Walk-forward 백테스트와 가중치 탐색을 통합한 연구용 프로젝트입니다.
+Python 통계/시계열 분석을 기본 베이스로 하고, Gail Howard의 Lottery Master Guide 계열에서 공개적으로 강조되는 Games Out/Skips, Number Groups, Last Digits, Odd-Even, High-Low, Hot/Cold, Sum Balance 성격의 분석 주제를 결합한 연구용 Lotto64 프로젝트입니다.
 
-## 주요 기능
+## 최종 핵심
 
-- CSV/JSON 업로드와 데이터 품질 검증
-- 자동 최신 회차 업데이트 시도
-- CSV와 SQLite 동기화
-- GAP 분포와 번호별 현재 GAP
-- EGR 회복률 검증
-- CEC·DRC 상태전이 검증
-- 회차 DNA와 유사 회차 검색
-- 후보 15수·13수·11수
-- 번호별 상대확률 지표와 설명
-- 안정형·균형형·공격형 TOP20
-- 유전자 알고리즘 기반 조합 최적화
-- Walk-forward 백테스트와 성능 그래프
-- 확률적 가중치 탐색
-- GitHub Actions CI
-- 주간 데이터 업데이트 Workflow
+1. 회차별 **GAP 합계 시계열**
+2. **GAP 구간별 당첨 분포 / empirical hazard**
+3. 회차별 **당첨번호 6개 합계 시계열**
+4. 최근 **50회 vs 이전 50회 / 최근 100회 regime**
+5. Drawings Since Hit / Skip-Hit / Skips Due
+6. 후보 11·13·15수
+7. 베스트 5·10·15·20조합
+8. Walk-forward + 실패 원인 분석
 
-> 로또는 무작위 추첨입니다. 이 프로젝트는 당첨을 보장하지 않으며 과거 데이터 연구와 가설 검증을 위한 도구입니다.
+## 데이터
 
-## GitHub에 교체 업로드
+포함 데이터:
+- 1024~1235회
+- 212회
+- 본번호 6개 + 실제 보너스 번호
+- 최신 포함: 1235회 (2026-08-01)
 
-압축을 푼 뒤 저장소의 기존 내용을 백업하고, 이 프로젝트의 모든 파일과 폴더를 저장소 루트에 업로드합니다.
-
-최종 구조:
-
-```text
-lotto-ai-app/
-├─ app.py
-├─ update_lotto.py
-├─ requirements.txt
-├─ README.md
-├─ lotto64/
-├─ data/
-├─ reports/
-├─ tests/
-├─ .streamlit/
-└─ .github/workflows/
-```
-
-## 로컬 실행
+## Streamlit
 
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Streamlit Community Cloud
-
+Streamlit Cloud:
 - Repository: `popfun79-arch/lotto-ai-app`
 - Branch: `main`
-- Main file path: `app.py`
+- Main file: `app.py`
 
-## 주간 데이터 자동 업데이트
+## 주의
 
-`.github/workflows/update_data.yml`은 매주 토요일 UTC 13:30에 실행되도록 설정되어 있습니다. 공식 사이트 응답 형식이 바뀌면 자동 수집이 실패할 수 있으며, 그 경우 CSV 업로드로 갱신하세요.
-
-## 테스트 수
-
-`tests/test_math.py`는 번호 1~45를 매개변수화해 180개 이상의 개별 검증 사례를 수행합니다.
+로또는 무작위 추첨입니다. 이 프로젝트의 점수와 패턴은 과거 데이터에 대한 상대적 순위/검증 지표이지 실제 당첨 확률을 높인다는 보장이 아닙니다.
