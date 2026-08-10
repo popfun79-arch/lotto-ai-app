@@ -24,6 +24,12 @@ def build_backtest_report(result: pd.DataFrame, settings: dict) -> dict:
             "candidate_13_mean_hits": float(result["candidate_13_hits"].mean()),
             "candidate_15_mean_hits": float(result["candidate_15_hits"].mean()),
             "top_combo_mean_max_hit": float(result["top_combo_max_hit"].mean()),
+            "sum_center_mae": float(result["sum_abs_error"].mean()),
+            "sum_core_band_hit_rate": float(result["sum_in_core_band"].mean()),
+            "sum_wide_band_hit_rate": float(result["sum_in_wide_band"].mean()),
+            "top_combo_nearest_sum_error_mean": float(
+                result["top_combo_nearest_sum_error"].dropna().mean()
+            ),
             "top_combo_3plus_rate": float(result["top_combo_3plus"].mean()),
             "top_combo_4plus_rate": float(result["top_combo_4plus"].mean()),
             "top_combo_5plus_rate": float(result["top_combo_5plus"].mean()),
