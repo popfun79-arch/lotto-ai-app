@@ -41,6 +41,7 @@ jobs:
           python -c "from lotto64.analysis.gap_sum_series import forecast_next_gap_sum; print('GAP Sum Series OK')"
           python -c "from lotto64.models.pattern_master import master_number_scores; print('Pattern Master OK')"
           python -c "from lotto64.recommend.final_pattern import final_recommendation_bundle; print('Final Engine OK')"
+          python -c "from lotto64.recommend.top_of_best import build_top_of_best_sets; print('Top of the Best OK')"
 
       - name: Tests
         run: |
