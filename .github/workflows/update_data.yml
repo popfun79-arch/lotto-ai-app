@@ -3,9 +3,10 @@ name: Weekly Lotto Data Update
 on:
   workflow_dispatch:
   schedule:
-    # GitHub Actions cron은 UTC 기준입니다.
-    # 토요일 19:00 UTC = 일요일 04:00 KST
-    - cron: "0 19 * * 6"
+    # 한국 시간 기준 매주 일요일 오전 04:10
+    # 정각(04:00) 혼잡 가능성을 피하기 위해 10분 뒤 실행합니다.
+    - cron: "10 4 * * 0"
+      timezone: "Asia/Seoul"
 
 permissions:
   contents: write
@@ -31,37 +32,68 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+          python -m pip install --editable .
 
       - name: Update latest lotto draw
         run: |
-          python update_lotto.py --max-checks 10
+          python update_lotto.py --max-checks 10 --require-expected
 
       - name: Validate latest data
         run: |
           python - <<'PY'
           import pandas as pd
+          from update_lotto import expected_latest_round_kst
 
-          df = pd.read_csv("data/lotto_all.csv", encoding="utf-8-sig")
+          df = pd.read_csv(
+              "data/lotto_all.csv",
+              encoding="utf-8-sig",
+          )
 
-          required = ["round", "n1", "n2", "n3", "n4", "n5", "n6", "bonus"]
-          missing_columns = [c for c in required if c not in df.columns]
-          assert not missing_columns, f"필수 컬럼 누락: {missing_columns}"
+          required = [
+              "round", "date",
+              "n1", "n2", "n3", "n4", "n5", "n6",
+              "bonus",
+          ]
+          missing = [
+              col for col in required
+              if col not in df.columns
+          ]
+          assert not missing, f"필수 컬럼 누락: {missing}"
 
-          assert not df["round"].duplicated().any(), "중복 회차가 있습니다."
+          assert not df["round"].duplicated().any(), (
+              "중복 회차가 있습니다."
+          )
 
-          for col in ["n1", "n2", "n3", "n4", "n5", "n6", "bonus"]:
-              assert df[col].between(1, 45).all(), f"{col} 범위 오류"
+          expected = expected_latest_round_kst()
+          latest = int(df["round"].max())
+          assert latest >= expected, (
+              f"최신 회차 누락: 현재 {latest} / 예상 {expected}"
+          )
+
+          for col in [
+              "n1", "n2", "n3",
+              "n4", "n5", "n6", "bonus",
+          ]:
+              assert df[col].between(1, 45).all(), (
+                  f"{col} 범위 오류"
+              )
 
           for _, row in df.iterrows():
-              main = [int(row[f"n{i}"]) for i in range(1, 7)]
-              assert len(set(main)) == 6, f"{int(row['round'])}회 본번호 중복"
+              main = [
+                  int(row[f"n{i}"])
+                  for i in range(1, 7)
+              ]
+              assert len(set(main)) == 6, (
+                  f"{int(row['round'])}회 본번호 중복"
+              )
               assert int(row["bonus"]) not in set(main), (
-                  f"{int(row['round'])}회 보너스/본번호 중복"
+                  f"{int(row['round'])}회 "
+                  "보너스/본번호 중복"
               )
 
           print(
-              f"데이터 검증 OK / 최신 회차 {int(df['round'].max())} / "
-              f"전체 {len(df)}회"
+              f"데이터 검증 OK / 최신 {latest}회 / "
+              f"예상 {expected}회 / 전체 {len(df)}회"
           )
           PY
 
@@ -70,5 +102,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/lotto_all.csv data/lotto64.db || true
-          git diff --cached --quiet || git commit -m "Auto update Sunday 04:00 KST lotto data"
+          git diff --cached --quiet || git commit -m "Auto update weekly lotto data"
           git push
