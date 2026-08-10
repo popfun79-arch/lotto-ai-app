@@ -17,14 +17,14 @@ from lotto64.data.storage import load_best_available, sync_sqlite, write_csv
 from lotto64.data.updater import update_latest
 from lotto64.models.bayesian import bayesian_style_weight_search
 from lotto64.models.scoring import explain_number, number_scores
-from lotto64.recommend.combination import generate_ranked
 from lotto64.recommend.ga import ga_optimize
-from lotto64.recommend.portfolio import strategy_sets
+from lotto64.recommend.portfolio import build_portfolio
 from lotto64.recommend.final_pattern import final_recommendation_bundle
+from lotto64.recommend.top_of_best import build_top_of_best_sets
 from lotto64.reports.reporting import build_backtest_report, csv_bytes, json_bytes
 
-st.set_page_config(page_title="Lotto64 Ultimate AI v3", page_icon="🍀", layout="wide")
-st.title("🍀 Lotto64 Ultimate AI v4.0 Final Pattern")
+st.set_page_config(page_title="Lotto64 v4.1 Top of the Best", page_icon="🍀", layout="wide")
+st.title("🍀 Lotto64 Ultimate AI v4.1 · Top of the Best")
 st.caption("데이터 · 합계 시계열 · GAP · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
@@ -66,9 +66,16 @@ except Exception as exc:
 analysis = cleaned.tail(min(recent_window, len(cleaned))).reset_index(drop=True)
 st.success(f"{source} / 전체 {len(cleaned)}회 / 분석 {len(analysis)}회")
 
+# Final Pattern 통합 엔진은 앱 전체에서 한 번만 계산합니다.
+# Top of the Best와 Final Pattern이 동일한 최종 포트폴리오를 공유합니다.
+with st.spinner("통합 Final Pattern 엔진 계산 중..."):
+    final_bundle = final_recommendation_bundle(analysis)
+
+top_of_best_sets = build_top_of_best_sets(final_bundle["portfolio"])
+
 tabs = st.tabs([
     "데이터 진단", "합계 시계열", "GAP·EGR", "CEC·DRC", "회차 DNA",
-    "후보 번호", "TOP20", "GA 최적화", "Walk-forward", "가중치 탐색",
+    "후보 번호", "Top of the Best", "GA 최적화", "Walk-forward", "가중치 탐색",
     "설명", "Final Pattern",
 ])
 
@@ -196,30 +203,69 @@ with tabs[5]:
     st.download_button("번호 점수 다운로드", csv_bytes(scores), "number_scores.csv")
 
 with tabs[6]:
-    scores = number_scores(analysis, egr_threshold=egr_threshold, similarity_k=similarity_k)
-    with st.spinner("일반 조합 생성 중..."):
-        ranked = generate_ranked(
-            analysis,
-            scores,
-            candidate_count=candidate_count,
-            seed=int(seed),
-        )
-        sets = strategy_sets(ranked, 20)
+    st.subheader("🏆 Top of the Best")
+    st.caption(
+        "기존 안정형·균형형·공격형 3종 TOP20(최대 60개)을 사용하지 않습니다. "
+        "Final Pattern의 단일 통합 점수로 최종 20조합만 선정합니다."
+    )
+    st.info(
+        "BEST 5 ⊂ BEST 10 ⊂ BEST 15 ⊂ BEST 20 입니다. "
+        "실제 고유 추천은 최대 20조합이며, 5·10·15는 같은 Top20의 상위 구간입니다."
+    )
 
-    for name, data in sets.items():
-        st.subheader(name)
-        if data.empty:
-            st.warning("조합 없음")
-            continue
-        display = data.copy()
-        display["combination"] = display["combination"].apply(lambda x: " ".join(map(str, x)))
-        st.dataframe(display, use_container_width=True)
-        st.download_button(
-            f"{name} 다운로드",
-            csv_bytes(display),
-            f"top20_{name}.csv",
-            key=f"normal_{name}",
-        )
+    final_context = final_bundle["context"]
+    sum_fc = final_context["sum_forecast"]
+    gap_fc = final_context["gap_sum_forecast"]
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(
+        "번호합 핵심구간",
+        f"{sum_fc['target_low']:.0f}~{sum_fc['target_high']:.0f}",
+    )
+    m2.metric("번호합 중심", f"{sum_fc['target_center']:.0f}")
+    m3.metric(
+        "GAP합 핵심구간",
+        f"{gap_fc['target_low']:.0f}~{gap_fc['target_high']:.0f}",
+    )
+    m4.metric("GAP합 중심", f"{gap_fc['target_center']:.0f}")
+
+    size_tabs = st.tabs(["BEST 5", "BEST 10", "BEST 15", "BEST 20"])
+
+    for view_tab, size in zip(size_tabs, (5, 10, 15, 20)):
+        with view_tab:
+            selected = top_of_best_sets.get(
+                size,
+                pd.DataFrame(),
+            ).copy()
+
+            if selected.empty:
+                st.warning("추천 가능한 조합이 없습니다.")
+                continue
+
+            selected["combination"] = selected["combination"].apply(
+                lambda values: " ".join(map(str, values))
+            )
+
+            st.markdown(f"### Top of the Best {size}조합")
+            st.dataframe(
+                selected,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            st.download_button(
+                f"Top of the Best {size}조합 CSV",
+                csv_bytes(selected),
+                f"top_of_the_best_{size}.csv",
+                key=f"top_of_best_{size}",
+            )
+
+    st.markdown("#### 최종 점수에 반영되는 주요 구조")
+    st.write(
+        "Pattern Master 번호점수 + 번호합 시계열 + GAP합 시계열 + "
+        "GAP구간 구성 + 홀짝/저고 + 번호구간 + 끝수 + AC + "
+        "이월수 + 조합 간 중복/번호 노출 분산을 함께 반영합니다."
+    )
 
 with tabs[7]:
     st.subheader("유전자 알고리즘 조합 최적화")
@@ -237,7 +283,7 @@ with tabs[7]:
                 generations=generations,
                 seed=int(seed),
             )
-        ga_top = strategy_sets(ga_ranked, 20)["균형형"]
+        ga_top = build_portfolio(ga_ranked, size=20, max_jaccard=0.50)
         display = ga_top.copy()
         if not display.empty:
             display["combination"] = display["combination"].apply(lambda x: " ".join(map(str, x)))
@@ -345,7 +391,7 @@ with tabs[10]:
     st.dataframe(explain_number(row), use_container_width=True)
 
 st.divider()
-st.caption("Lotto64 Ultimate AI v4.0 · Python + Pattern Master + 합계/GAP 시계열")
+st.caption("Lotto64 Ultimate AI v4.1 · Top of the Best 단일 통합 포트폴리오")
 
 
 
@@ -355,9 +401,6 @@ with tabs[11]:
         "Drawings Since Hit·Skip/Hit·Skips Due·Number Groups·Last Digits·"
         "Odd/Even·High/Low 성격의 패턴과 Python 시계열/GAP/DNA를 결합합니다."
     )
-
-    with st.spinner("Final Pattern 분석 중..."):
-        final_bundle = final_recommendation_bundle(analysis)
 
     final_candidates = final_bundle["candidate_sets"]
     final_context = final_bundle["context"]
@@ -390,13 +433,13 @@ with tabs[11]:
         final_portfolio["combination"] = final_portfolio["combination"].apply(
             lambda values: " ".join(map(str, values))
         )
-        st.markdown("#### 베스트 20 조합")
+        st.markdown("#### Top of the Best 20 조합")
         st.dataframe(final_portfolio, use_container_width=True)
 
         for size in (5, 10, 15, 20):
             st.download_button(
-                f"베스트 {size}조합 CSV",
+                f"Top of the Best {size}조합 CSV",
                 csv_bytes(final_portfolio.head(size)),
-                f"final_pattern_top{size}.csv",
+                f"top_of_the_best_{size}_final_pattern.csv",
                 key=f"final_top_{size}",
             )
