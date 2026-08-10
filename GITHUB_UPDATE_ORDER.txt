@@ -1,0 +1,23 @@
+Lotto64 v4.0 Final Pattern GitHub 업데이트
+
+1. 압축을 풉니다.
+2. 내부 경로를 유지해 GitHub 저장소 루트에 업로드/교체합니다.
+3. 커밋 메시지:
+   Finalize Lotto64 v4.0 Pattern Master
+4. Actions 최신 실행의 초록색 체크를 확인합니다.
+5. Streamlit Cloud를 새로고침합니다.
+
+핵심 교체:
+- app.py
+- data/lotto_all.csv
+- .github/workflows/ci.yml
+- pyproject.toml
+- pytest.ini
+
+신규 핵심:
+- lotto64/analysis/gap_sum_series.py
+- lotto64/models/pattern_master.py
+- lotto64/recommend/final_pattern.py
+- lotto64/backtest/diagnostics.py
+- FINAL_MODEL_POLICY.md
+- reports/round_1236_*
