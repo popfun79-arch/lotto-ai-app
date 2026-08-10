@@ -1,4 +1,4 @@
-# Lotto64 Ultimate AI v4.1 — Top of the Best Edition
+# Lotto64 Ultimate AI v4.2 — Top of the Best Edition
 
 Python 통계/시계열 분석을 기본 베이스로 하고, Gail Howard의 Lottery Master Guide 계열에서 공개적으로 강조되는 Games Out/Skips, Number Groups, Last Digits, Odd-Even, High-Low, Hot/Cold, Sum Balance 성격의 분석 주제를 결합한 연구용 Lotto64 프로젝트입니다.
 
@@ -52,3 +52,15 @@ Streamlit Cloud:
 따라서 `BEST 5 ⊂ BEST 10 ⊂ BEST 15 ⊂ BEST 20`입니다.
 네 화면을 합쳐 50개를 새로 만드는 것이 아니라,
 실제 고유 추천 조합은 최대 20개입니다.
+
+
+## v4.2 운영 설정
+
+- 자동 데이터 업데이트: 매주 **일요일 오전 04:00 KST**
+- GitHub Actions cron: `0 19 * * 6` (UTC 기준)
+- 기본 분석 범위: **최신 200회**
+- 원본 데이터는 전체 이력을 보관하고, 분석만 최근 200회를 기본 사용
+- 사이드바에서 필요할 경우 분석 범위를 100~300회로 조정 가능
+
+이 설정은 토요일 추첨 직후가 아니라 충분한 시간 간격을 둔 뒤 데이터를
+업데이트하도록 하여 외부 데이터 소스 반영 지연 가능성을 줄이기 위한 운영 설정입니다.
