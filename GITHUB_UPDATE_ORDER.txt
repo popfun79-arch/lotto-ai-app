@@ -1,16 +1,20 @@
-Lotto64 v4.1 Top of the Best 업데이트
+Lotto64 v4.2 업데이트 안내
 
-가장 안전한 방법:
-lotto64_v4_1_top_of_best_complete.zip 내부 전체를 GitHub 저장소 루트에 덮어쓰기
+변경:
+1. 자동 업데이트 = 매주 일요일 오전 04:00 KST
+2. 기본 분석 범위 = 최신 200회
 
-핵심 변경:
-- 기존 안정형/균형형/공격형 3종 TOP20 제거
-- 하나의 Top of the Best 최종 20조합
-- BEST 5 / BEST 10 / BEST 15 / BEST 20
-- 네 화면의 실제 고유 조합은 최대 20개
+권장 업로드:
+lotto64_v4_2_sunday_update_latest200_complete.zip 전체를
+GitHub 저장소 루트에 경로 유지하여 덮어쓰기
 
 커밋 메시지:
-Upgrade Lotto64 v4.1 Top of the Best
+Upgrade Lotto64 v4.2 Sunday update and latest 200
 
-업로드 후:
-GitHub Actions -> Lotto64 CI -> 초록색 체크 -> Streamlit 새로고침
+업로드 후 확인:
+1. GitHub Actions -> Lotto64 CI -> 초록색
+2. Weekly Lotto Data Update workflow 존재 확인
+3. Streamlit 새로고침
+4. 화면 상단:
+   전체 데이터 212회 / 현재 분석 최신 200회
+   와 같이 표시되는지 확인
