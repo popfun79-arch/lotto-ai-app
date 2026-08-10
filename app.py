@@ -24,13 +24,20 @@ from lotto64.recommend.top_of_best import build_top_of_best_sets
 from lotto64.reports.reporting import build_backtest_report, csv_bytes, json_bytes
 
 st.set_page_config(page_title="Lotto64 v4.1 Top of the Best", page_icon="🍀", layout="wide")
-st.title("🍀 Lotto64 Ultimate AI v4.1 · Top of the Best")
+st.title("🍀 Lotto64 Ultimate AI v4.2 · Top of the Best")
 st.caption("데이터 · 합계 시계열 · GAP · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
 with st.sidebar:
     st.header("설정")
-    recent_window = st.slider("분석 회차", 100, 500, 300, 10)
+    recent_window = st.slider(
+        "분석 회차 (최신)",
+        min_value=100,
+        max_value=300,
+        value=200,
+        step=10,
+        help="기본값은 최신 200회입니다. 필요할 때만 범위를 조정하세요.",
+    )
     backtest_rounds = st.slider("백테스트 회차", 20, 100, 50, 10)
     candidate_count = st.slider("후보 번호 수", 15, 24, 18)
     similarity_k = st.slider("유사 회차 수", 5, 30, 15)
@@ -64,7 +71,10 @@ except Exception as exc:
     st.stop()
 
 analysis = cleaned.tail(min(recent_window, len(cleaned))).reset_index(drop=True)
-st.success(f"{source} / 전체 {len(cleaned)}회 / 분석 {len(analysis)}회")
+st.success(
+    f"{source} / 전체 데이터 {len(cleaned)}회 / "
+    f"현재 분석 최신 {len(analysis)}회"
+)
 
 # Final Pattern 통합 엔진은 앱 전체에서 한 번만 계산합니다.
 # Top of the Best와 Final Pattern이 동일한 최종 포트폴리오를 공유합니다.
@@ -391,7 +401,7 @@ with tabs[10]:
     st.dataframe(explain_number(row), use_container_width=True)
 
 st.divider()
-st.caption("Lotto64 Ultimate AI v4.1 · Top of the Best 단일 통합 포트폴리오")
+st.caption("Lotto64 Ultimate AI v4.2 · 최신 200회 분석 · 일요일 04시 자동 업데이트")
 
 
 
