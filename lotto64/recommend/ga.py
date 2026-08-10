@@ -5,6 +5,7 @@ from typing import Sequence
 
 import pandas as pd
 
+from lotto64.analysis.sum_series import forecast_next_sum
 from lotto64.recommend.combination import score_combo
 from lotto64.recommend.filters import hard_filter
 
@@ -28,6 +29,8 @@ def ga_optimize(
     rng = random.Random(seed)
     pool = scores.head(candidate_count)["number"].astype(int).tolist()
 
+    sum_forecast = forecast_next_sum(df)
+
     population = {
         tuple(sorted(rng.sample(pool, 6)))
         for _ in range(population_size * 2)
@@ -36,7 +39,7 @@ def ga_optimize(
 
     for _ in range(generations):
         evaluated = [
-            score_combo(combo, scores, df)
+            score_combo(combo, scores, df, sum_forecast=sum_forecast)
             for combo in population
             if hard_filter(combo)
         ]
@@ -63,7 +66,7 @@ def ga_optimize(
         population = list(next_population)
 
     final_rows = [
-        score_combo(combo, scores, df)
+        score_combo(combo, scores, df, sum_forecast=sum_forecast)
         for combo in population
         if hard_filter(combo)
     ]
