@@ -1,16 +1,19 @@
-Lotto64 v4.1 Top of the Best 업데이트
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
-가장 안전한 방법:
-lotto64_v4_1_top_of_best_complete.zip 내부 전체를 GitHub 저장소 루트에 덮어쓰기
+[project]
+name = "lotto64-ultimate-ai"
+version = "4.1.0"
+description = "Lotto64 Top of the Best Edition"
+readme = "README.md"
+requires-python = ">=3.11"
 
-핵심 변경:
-- 기존 안정형/균형형/공격형 3종 TOP20 제거
-- 하나의 Top of the Best 최종 20조합
-- BEST 5 / BEST 10 / BEST 15 / BEST 20
-- 네 화면의 실제 고유 조합은 최대 20개
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lotto64*"]
 
-커밋 메시지:
-Upgrade Lotto64 v4.1 Top of the Best
-
-업로드 후:
-GitHub Actions -> Lotto64 CI -> 초록색 체크 -> Streamlit 새로고침
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
