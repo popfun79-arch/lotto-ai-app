@@ -1,23 +1,53 @@
-Lotto64 v4.0 Final Pattern GitHub 업데이트
+Lotto64 v4.0 Complete GitHub Replacement
 
-1. 압축을 풉니다.
-2. 내부 경로를 유지해 GitHub 저장소 루트에 업로드/교체합니다.
-3. 커밋 메시지:
-   Finalize Lotto64 v4.0 Pattern Master
-4. Actions 최신 실행의 초록색 체크를 확인합니다.
-5. Streamlit Cloud를 새로고침합니다.
+문제 원인
+---------
+이전에 제공된 lotto64_final_pattern_v4_github_patch.zip은
+v3.5가 이미 GitHub에 반영되어 있다는 전제의 '차등 패치'였습니다.
 
-핵심 교체:
-- app.py
-- data/lotto_all.csv
-- .github/workflows/ci.yml
-- pyproject.toml
-- pytest.ini
+v3.0 상태에서 그 패치만 덮어쓰면 다음과 같은 v3.5 기반 파일들이 빠질 수 있습니다.
+예:
+- lotto64/analysis/sum_series.py
+- lotto64/backtest/walk_forward.py
+- lotto64/recommend/combination.py
+- lotto64/recommend/ga.py
+- lotto64/reports/reporting.py
+- requirements.txt
+- update_lotto.py
+- 기타 lotto64 기본 모듈
 
-신규 핵심:
-- lotto64/analysis/gap_sum_series.py
-- lotto64/models/pattern_master.py
-- lotto64/recommend/final_pattern.py
-- lotto64/backtest/diagnostics.py
-- FINAL_MODEL_POLICY.md
-- reports/round_1236_*
+이번 ZIP은 v4.0 실행에 필요한 파일을 모두 포함한 '완전 교체본'입니다.
+
+GitHub 반영 순서
+----------------
+1. ZIP을 PC에서 압축 해제합니다.
+2. 압축 해제 폴더 안의 '내용물 전체'를 GitHub 저장소 루트에 업로드/덮어쓰기합니다.
+   - lotto64_v4_complete_github_replacement 폴더 자체를 한 단계 더 만들지 마세요.
+3. 특히 아래 파일/폴더가 저장소에 존재하는지 확인합니다.
+   - app.py
+   - requirements.txt
+   - pyproject.toml
+   - pytest.ini
+   - update_lotto.py
+   - .github/workflows/ci.yml
+   - .streamlit/config.toml
+   - lotto64/analysis/sum_series.py
+   - lotto64/analysis/gap_sum_series.py
+   - lotto64/models/pattern_master.py
+   - lotto64/recommend/final_pattern.py
+4. 과거에 tests/tests 폴더가 남아 있다면 삭제하는 것을 권장합니다.
+   - 새 CI는 해당 폴더를 무시하도록 보강되어 있습니다.
+5. 커밋 메시지:
+   Repair Lotto64 v4 complete replacement
+6. Actions -> Lotto64 CI 에서 최신 실행이 초록색인지 확인합니다.
+7. 초록색이면 Streamlit Cloud를 새로고침합니다.
+
+로컬 검증 결과
+---------------
+- app.py compile: OK
+- lotto64 package import: OK
+- Sum Series import: OK
+- GAP Sum Series import: OK
+- Pattern Master import: OK
+- Final Engine import: OK
+- Core tests: 196 passed
