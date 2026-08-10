@@ -1,4 +1,4 @@
-# Lotto64 Ultimate AI v4.0 — Final Pattern Edition
+# Lotto64 Ultimate AI v4.1 — Top of the Best Edition
 
 Python 통계/시계열 분석을 기본 베이스로 하고, Gail Howard의 Lottery Master Guide 계열에서 공개적으로 강조되는 Games Out/Skips, Number Groups, Last Digits, Odd-Even, High-Low, Hot/Cold, Sum Balance 성격의 분석 주제를 결합한 연구용 Lotto64 프로젝트입니다.
 
@@ -36,3 +36,19 @@ Streamlit Cloud:
 ## 주의
 
 로또는 무작위 추첨입니다. 이 프로젝트의 점수와 패턴은 과거 데이터에 대한 상대적 순위/검증 지표이지 실제 당첨 확률을 높인다는 보장이 아닙니다.
+
+
+## v4.1 Top of the Best
+
+기존 `TOP20` 탭의 안정형·균형형·공격형 3세트 추천을 제거했습니다.
+
+이제 하나의 Final Pattern 통합 포트폴리오만 사용합니다.
+
+- BEST 5 = 최종 1~5위
+- BEST 10 = 최종 1~10위
+- BEST 15 = 최종 1~15위
+- BEST 20 = 최종 1~20위
+
+따라서 `BEST 5 ⊂ BEST 10 ⊂ BEST 15 ⊂ BEST 20`입니다.
+네 화면을 합쳐 50개를 새로 만드는 것이 아니라,
+실제 고유 추천 조합은 최대 20개입니다.
