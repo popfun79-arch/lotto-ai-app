@@ -14,31 +14,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 저장소 파일 불러오기
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Python 설치
+      - name: Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: 패키지 설치
+      - name: Install
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install --editable .
 
-      - name: Python 문법 검사
+      - name: Compile
         run: |
           python -m py_compile app.py
           python -m py_compile update_lotto.py
           python -m compileall -q lotto64
 
-      - name: 설치된 패키지 확인
+      - name: Import check
         run: |
-          python -c "import lotto64; print('lotto64 import OK:', lotto64.__file__)"
-          python -c "from lotto64.utils.lotto_math import odd_count; print('submodule import OK:', odd_count([1,2,3,4,5,6]))"
+          python -c "import lotto64; print(lotto64.__file__)"
+          python -c "from lotto64.models.pattern_master import master_number_scores; print('Pattern Master OK')"
+          python -c "from lotto64.recommend.final_pattern import final_recommendation_bundle; print('Final Engine OK')"
 
-      - name: 단위 테스트
+      - name: Tests
         run: |
           python -m pytest -q
