@@ -1,21 +1,9 @@
-Lotto64 v4.3.1 CI/README 수정
-
-이번 오류의 원인:
-.github/workflows/ci.yml의 `- name: Tests`가 jobs.test.steps 밖으로 빠져
-GitHub Actions workflow 구문이 잘못되었습니다.
-
-가장 간단한 방법:
-이 패치 ZIP의 내용 5개를 GitHub 루트에 경로 그대로 덮어쓰기
+Lotto64 v4.3.2 표시 수정
 
 핵심:
-- .github/workflows/ci.yml
-- README.md
-- app.py
-- pyproject.toml
-- CHANGELOG_V4_3_1.md
+- 전체 데이터 213회는 유지
+- 분석 화면의 '회차 수'를 최신 분석 범위 200회로 표시
+- 분석 시작 회차도 전체 1024가 아니라 최신 200회 시작점 1037로 표시
 
-커밋:
-Fix Lotto64 v4.3.1 CI and README
-
-업로드 후:
-Actions -> Lotto64 CI -> 최신 실행 초록색 확인
+권장 커밋:
+Fix Lotto64 v4.3.2 analysis count display
