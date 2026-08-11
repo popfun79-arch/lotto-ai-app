@@ -24,7 +24,7 @@ from lotto64.recommend.top_of_best import build_top_of_best_sets
 from lotto64.reports.reporting import build_backtest_report, csv_bytes, json_bytes
 
 st.set_page_config(page_title="Lotto64 v4.1 Top of the Best", page_icon="🍀", layout="wide")
-st.title("🍀 Lotto64 Ultimate AI v4.3.1 · Top of the Best")
+st.title("🍀 Lotto64 Ultimate AI v4.3.2 · Top of the Best")
 st.caption("데이터 · 합계 시계열 · GAP · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
@@ -93,10 +93,10 @@ with tabs[0]:
     for note in notes:
         st.write(f"- {note}")
     a, b, c = st.columns(3)
-    a.metric("최초 회차", int(cleaned["round"].min()))
-    b.metric("최신 회차", int(cleaned["round"].max()))
-    c.metric("회차 수", len(cleaned))
-    st.dataframe(cleaned.tail(20), use_container_width=True)
+    a.metric("분석 시작 회차", int(analysis["round"].min()))
+    b.metric("분석 최신 회차", int(analysis["round"].max()))
+    c.metric("분석 회차 수", len(analysis))
+    st.dataframe(analysis.tail(20), use_container_width=True)
 
     col1, col2 = st.columns(2)
     if col1.button("CSV 정리본 저장"):
@@ -401,7 +401,7 @@ with tabs[10]:
     st.dataframe(explain_number(row), use_container_width=True)
 
 st.divider()
-st.caption("Lotto64 Ultimate AI v4.3.1 · 최신 200회 분석 · 일요일 04:10 자동 업데이트")
+st.caption("Lotto64 Ultimate AI v4.3.2 · 최신 200회 분석 · 일요일 04:10 자동 업데이트")
 
 
 
