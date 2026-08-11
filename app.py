@@ -24,7 +24,7 @@ from lotto64.recommend.top_of_best import build_top_of_best_sets
 from lotto64.reports.reporting import build_backtest_report, csv_bytes, json_bytes
 
 st.set_page_config(page_title="Lotto64 v4.1 Top of the Best", page_icon="🍀", layout="wide")
-st.title("🍀 Lotto64 Ultimate AI v4.2 · Top of the Best")
+st.title("🍀 Lotto64 Ultimate AI v4.3.1 · Top of the Best")
 st.caption("데이터 · 합계 시계열 · GAP · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
@@ -48,7 +48,7 @@ with st.sidebar:
 
     st.divider()
     if st.button("최신 회차 자동 업데이트"):
-        with st.spinner("공식 데이터 업데이트를 시도합니다..."):
+        with st.spinner("최신 데이터 업데이트를 확인합니다..."):
             updated_df, new_count = update_latest()
         st.success(f"신규 {new_count}회 반영 / 현재 {len(updated_df)}회")
         st.cache_data.clear()
@@ -401,7 +401,7 @@ with tabs[10]:
     st.dataframe(explain_number(row), use_container_width=True)
 
 st.divider()
-st.caption("Lotto64 Ultimate AI v4.2 · 최신 200회 분석 · 일요일 04시 자동 업데이트")
+st.caption("Lotto64 Ultimate AI v4.3.1 · 최신 200회 분석 · 일요일 04:10 자동 업데이트")
 
 
 
