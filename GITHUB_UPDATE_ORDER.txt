@@ -1,20 +1,21 @@
-Lotto64 v4.2 업데이트 안내
+Lotto64 v4.3.1 CI/README 수정
 
-변경:
-1. 자동 업데이트 = 매주 일요일 오전 04:00 KST
-2. 기본 분석 범위 = 최신 200회
+이번 오류의 원인:
+.github/workflows/ci.yml의 `- name: Tests`가 jobs.test.steps 밖으로 빠져
+GitHub Actions workflow 구문이 잘못되었습니다.
 
-권장 업로드:
-lotto64_v4_2_sunday_update_latest200_complete.zip 전체를
-GitHub 저장소 루트에 경로 유지하여 덮어쓰기
+가장 간단한 방법:
+이 패치 ZIP의 내용 5개를 GitHub 루트에 경로 그대로 덮어쓰기
 
-커밋 메시지:
-Upgrade Lotto64 v4.2 Sunday update and latest 200
+핵심:
+- .github/workflows/ci.yml
+- README.md
+- app.py
+- pyproject.toml
+- CHANGELOG_V4_3_1.md
 
-업로드 후 확인:
-1. GitHub Actions -> Lotto64 CI -> 초록색
-2. Weekly Lotto Data Update workflow 존재 확인
-3. Streamlit 새로고침
-4. 화면 상단:
-   전체 데이터 212회 / 현재 분석 최신 200회
-   와 같이 표시되는지 확인
+커밋:
+Fix Lotto64 v4.3.1 CI and README
+
+업로드 후:
+Actions -> Lotto64 CI -> 최신 실행 초록색 확인
