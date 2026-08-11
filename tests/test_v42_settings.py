@@ -13,9 +13,9 @@ def test_app_defaults_to_latest_200():
     assert "max_value=300" in text
 
 
-def test_weekly_update_is_sunday_0400_kst():
+def test_weekly_update_is_sunday_0410_kst():
     text = (
         ROOT / ".github" / "workflows" / "update_data.yml"
     ).read_text(encoding="utf-8")
-    assert 'cron: "0 19 * * 6"' in text
-    assert "일요일 04:00 KST" in text
+    assert 'cron: "10 4 * * 0"' in text
+    assert 'timezone: "Asia/Seoul"' in text
