@@ -53,4 +53,5 @@ jobs:
             tests/test_top_of_best.py \
             tests/test_v42_settings.py \
             tests/test_v43_update.py \
+            tests/test_v432_analysis_display.py \
             tests/test_smoke.py
