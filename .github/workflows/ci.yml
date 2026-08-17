@@ -44,6 +44,7 @@ jobs:
           python -c "from lotto64.recommend.top_of_best import build_top_of_best_sets; print('Top of the Best OK')"
           python -c "from lotto64.config import FIXED_SEED, DEFAULT_MULTI_SEED_COUNT; print('Seed config OK:', FIXED_SEED, DEFAULT_MULTI_SEED_COUNT)"
           python -c "from lotto64.backtest.seed_stability import build_seed_set; print('Seed stability OK:', build_seed_set())"
+          python -c "from lotto64.utils.lotto_math import NUMBER_GROUP_LABELS; print('Number Group labels OK:', NUMBER_GROUP_LABELS)"
 
       - name: Tests
         run: |
@@ -59,4 +60,5 @@ jobs:
             tests/test_v433_number_groups.py \
             tests/test_v44_seed_stability.py \
             tests/test_v441_seed_import_hotfix.py \
+            tests/test_v442_number_group_label_hotfix.py \
             tests/test_smoke.py
