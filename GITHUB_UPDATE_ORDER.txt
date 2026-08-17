@@ -1,21 +1,9 @@
-Lotto64 v4.4.2 Number Group Label Hotfix
+Lotto64 v4.3.2 표시 수정
 
-오류:
-NameError: NUMBER_GROUP_LABELS is not defined
+핵심:
+- 전체 데이터 213회는 유지
+- 분석 화면의 '회차 수'를 최신 분석 범위 200회로 표시
+- 분석 시작 회차도 전체 1024가 아니라 최신 200회 시작점 1037로 표시
 
-원인:
-app.py에서 새 Number Groups 라벨을 사용했지만 import가 빠졌습니다.
-
-권장:
-패치 ZIP 내부 파일을 GitHub 저장소 루트에 경로 그대로 덮어쓰기.
-
-가장 중요한 파일:
-- app.py
-
-커밋 메시지:
-Fix Lotto64 v4.4.2 Number Group label import
-
-반영 후:
-1. GitHub Actions -> Lotto64 CI 초록색 확인
-2. Streamlit 새로고침
-3. 동일 오류가 남으면 Manage app -> Reboot app
+권장 커밋:
+Fix Lotto64 v4.3.2 analysis count display
