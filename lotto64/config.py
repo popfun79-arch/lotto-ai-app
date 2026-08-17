@@ -1,85 +1,48 @@
 from __future__ import annotations
 
-from typing import Sequence
+from dataclasses import dataclass, asdict
+from pathlib import Path
 
-from lotto64.config import PRIMES
+ROOT_DIR = Path(__file__).resolve().parents[1]
+DATA_DIR = ROOT_DIR / "data"
+REPORT_DIR = ROOT_DIR / "reports"
+DB_PATH = DATA_DIR / "lotto64.db"
+CSV_PATH = DATA_DIR / "lotto_all.csv"
 
-# Lotto64 v4.3.3 Number Groups
-# 1~9 / 10~19 / 20~29 / 30~39 / 40~45
-NUMBER_GROUPS: tuple[tuple[int, int], ...] = (
-    (1, 9),
-    (10, 19),
-    (20, 29),
-    (30, 39),
-    (40, 45),
-)
+MAIN_COLUMNS = ["n1", "n2", "n3", "n4", "n5", "n6"]
+REQUIRED_COLUMNS = ["round", "date", *MAIN_COLUMNS, "bonus"]
+NUMBERS = list(range(1, 46))
+PRIMES = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43}
 
-NUMBER_GROUP_LABELS: tuple[str, ...] = tuple(
-    f"{start}~{end}" for start, end in NUMBER_GROUPS
-)
+# 실전 추천/기본 백테스트 재현성을 위한 고정 기준 Seed
+FIXED_SEED = 20260720
+DEFAULT_MULTI_SEED_COUNT = 5
 
-def zone_index(number: int) -> int:
-    """Return the Number Group index for a Lotto 6/45 number."""
-    value = int(number)
-    if not 1 <= value <= 45:
-        raise ValueError(f"로또 번호 범위 오류: {value}")
-    for index, (start, end) in enumerate(NUMBER_GROUPS):
-        if start <= value <= end:
-            return index
-    raise ValueError(f"Number Group을 찾지 못했습니다: {value}")
+DEFAULT_WEIGHTS = {
+    "long_frequency": 0.08,
+    "short_frequency": 0.08,
+    "gap": 0.12,
+    "egr": 0.10,
+    "carry": 0.07,
+    "neighbor": 0.08,
+    "bonus_window": 0.05,
+    "pair": 0.05,
+    "zone_recovery": 0.07,
+    "dna_similarity": 0.15,
+    "state": 0.10,
+    "hot_cold": 0.05,
+}
 
-def zone_counts(numbers: Sequence[int]) -> tuple[int, int, int, int, int]:
-    counts = [0] * len(NUMBER_GROUPS)
-    for number in numbers:
-        counts[zone_index(int(number))] += 1
-    return tuple(counts)
+@dataclass(frozen=True)
+class RunConfig:
+    recent_window: int = 200
+    backtest_rounds: int = 50
+    candidate_count: int = 18
+    similarity_k: int = 15
+    egr_threshold: int = 17
+    egr_horizon: int = 4
+    seed: int = FIXED_SEED
+    top_n: int = 20
 
-def odd_count(numbers: Sequence[int]) -> int:
-    return sum(int(n) % 2 == 1 for n in numbers)
-
-def low_count(numbers: Sequence[int]) -> int:
-    return sum(int(n) <= 22 for n in numbers)
-
-def prime_count(numbers: Sequence[int]) -> int:
-    return sum(int(n) in PRIMES for n in numbers)
-
-def end_digit_sum(numbers: Sequence[int]) -> int:
-    return sum(int(n) % 10 for n in numbers)
-
-def ac_value(numbers: Sequence[int]) -> int:
-    values = sorted(map(int, numbers))
-    diffs = {
-        values[j] - values[i]
-        for i in range(len(values))
-        for j in range(i + 1, len(values))
-    }
-    return len(diffs) - (len(values) - 1)
-
-def consecutive_pairs(numbers: Sequence[int]) -> int:
-    values = sorted(map(int, numbers))
-    return sum(values[i] == values[i - 1] + 1 for i in range(1, len(values)))
-
-def max_consecutive_run(numbers: Sequence[int]) -> int:
-    values = sorted(map(int, numbers))
-    if not values:
-        return 0
-    best = run = 1
-    for i in range(1, len(values)):
-        if values[i] == values[i - 1] + 1:
-            run += 1
-            best = max(best, run)
-        else:
-            run = 1
-    return best
-
-def neighbor_set(numbers: Sequence[int]) -> set[int]:
-    result: set[int] = set()
-    for number in numbers:
-        if number > 1:
-            result.add(number - 1)
-        if number < 45:
-            result.add(number + 1)
-    return result
-
-def format_combo(numbers: Sequence[int]) -> str:
-    return " ".join(map(str, sorted(map(int, numbers))))
+    def to_dict(self) -> dict:
+        return asdict(self)
