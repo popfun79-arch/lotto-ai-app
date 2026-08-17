@@ -20,7 +20,7 @@ def _request_json(url: str, timeout: int = 20):
     response = requests.get(
         url,
         timeout=timeout,
-        headers={"User-Agent": "Mozilla/5.0 Lotto64-Ultimate/4.3"},
+        headers={"User-Agent": "Mozilla/5.0 Lotto64-Ultimate/4.5"},
     )
     response.raise_for_status()
     return response.json()
@@ -237,3 +237,67 @@ def update_latest(
         sync_sqlite(combined)
 
     return combined, len(new_rows)
+
+
+def ensure_history_start(
+    start_round: int = 937,
+) -> tuple[pd.DataFrame, int]:
+    """
+    기존 CSV의 최초 회차보다 앞선 과거 데이터를 공개 전체 데이터셋에서
+    보충합니다. Historical Validation Ledger 100회 / 200회 학습창을
+    위해 기본 시작점은 937회입니다.
+    """
+    existing = read_csv()
+
+    if existing is None or existing.empty:
+        raise ValueError(
+            "기존 데이터가 없습니다. 먼저 기본 데이터를 준비해 주세요."
+        )
+
+    existing, _ = validate_and_clean(existing)
+    earliest = int(existing["round"].min())
+
+    if earliest <= int(start_round):
+        return existing, 0
+
+    historical_rows: list[dict] = []
+    try:
+        historical_rows = fetch_remote_range(
+            int(start_round),
+            earliest - 1,
+            timeout=30,
+        )
+    except (
+        requests.RequestException,
+        ValueError,
+        TypeError,
+    ) as exc:
+        raise RuntimeError(
+            f"과거 데이터 백필 실패: {exc}"
+        ) from exc
+
+    historical_rows = _validate_new_rows(historical_rows)
+
+    expected_count = earliest - int(start_round)
+    if len(historical_rows) != expected_count:
+        got_rounds = {int(row["round"]) for row in historical_rows}
+        expected_rounds = set(range(int(start_round), earliest))
+        missing = sorted(expected_rounds - got_rounds)
+        sample = ", ".join(map(str, missing[:10]))
+        raise RuntimeError(
+            f"과거 데이터 누락: 기대 {expected_count}회 / "
+            f"수신 {len(historical_rows)}회 / 누락 {sample}"
+        )
+
+    combined = pd.concat(
+        [pd.DataFrame(historical_rows), existing],
+        ignore_index=True,
+    )
+    combined, _ = validate_and_clean(combined)
+
+    if combined["round"].duplicated().any():
+        raise ValueError("과거 데이터 백필 후 중복 회차가 있습니다.")
+
+    write_csv(combined)
+    sync_sqlite(combined)
+    return combined, len(historical_rows)
