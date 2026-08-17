@@ -53,7 +53,7 @@ except ImportError:
     )
 
 st.set_page_config(page_title="Lotto64 v4.5 Historical Validation Ledger", page_icon="🍀", layout="wide")
-st.title("🍀 Lotto64 Ultimate AI v4.5 · Historical Validation Ledger")
+st.title("🍀 Lotto64 Ultimate AI v4.5.1 · Historical Validation Ledger")
 st.caption("데이터 · 합계 시계열 · GAP · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
