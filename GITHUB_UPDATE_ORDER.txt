@@ -1,19 +1,21 @@
-Lotto64 v4.4.1 Seed Import Hotfix
+Lotto64 v4.4.2 Number Group Label Hotfix
 
-현재 Streamlit 오류:
-ImportError: lotto64.config 에서 FIXED_SEED를 불러오지 못함
+오류:
+NameError: NUMBER_GROUP_LABELS is not defined
 
-권장: ZIP 내부 경로 그대로 한 번에 덮어쓰기.
+원인:
+app.py에서 새 Number Groups 라벨을 사용했지만 import가 빠졌습니다.
 
-특히 반드시 교체:
-1. lotto64/config.py
-2. lotto64/backtest/seed_stability.py
-3. app.py
+권장:
+패치 ZIP 내부 파일을 GitHub 저장소 루트에 경로 그대로 덮어쓰기.
+
+가장 중요한 파일:
+- app.py
 
 커밋 메시지:
-Fix Lotto64 v4.4.1 seed import compatibility
+Fix Lotto64 v4.4.2 Number Group label import
 
 반영 후:
-- GitHub Actions -> Lotto64 CI 초록색 확인
-- Streamlit 새로고침
-- 그래도 이전 오류 화면이면 Streamlit Manage app -> Reboot app
+1. GitHub Actions -> Lotto64 CI 초록색 확인
+2. Streamlit 새로고침
+3. 동일 오류가 남으면 Manage app -> Reboot app
