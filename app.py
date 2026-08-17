@@ -33,8 +33,16 @@ from lotto64.recommend.final_pattern import final_recommendation_bundle
 from lotto64.recommend.top_of_best import build_top_of_best_sets
 from lotto64.reports.reporting import build_backtest_report, csv_bytes, json_bytes
 
-st.set_page_config(page_title="Lotto64 v4.4 Seed Stability", page_icon="🍀", layout="wide")
-st.title("🍀 Lotto64 Ultimate AI v4.4.1 · Top of the Best")
+try:
+    from lotto64.utils.lotto_math import NUMBER_GROUP_LABELS
+except ImportError:
+    # Partial-deployment safety.
+    NUMBER_GROUP_LABELS = (
+        "1~9", "10~19", "20~29", "30~39", "40~45"
+    )
+
+st.set_page_config(page_title="Lotto64 v4.4.2 Seed Stability", page_icon="🍀", layout="wide")
+st.title("🍀 Lotto64 Ultimate AI v4.4.2 · Top of the Best")
 st.caption("데이터 · 합계 시계열 · GAP · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
