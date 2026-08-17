@@ -32,6 +32,17 @@ from lotto64.recommend.portfolio import build_portfolio
 from lotto64.recommend.final_pattern import final_recommendation_bundle
 from lotto64.recommend.top_of_best import build_top_of_best_sets
 from lotto64.reports.reporting import build_backtest_report, csv_bytes, json_bytes
+from lotto64.backtest.historical_ledger import (
+    build_historical_ledger,
+    compare_previous_recent,
+    cumulative_metrics,
+    failure_counts,
+    load_saved_ledger,
+    max_strict_validation_rounds,
+    required_history_start,
+    save_ledger,
+    summarize_ledger,
+)
 
 try:
     from lotto64.utils.lotto_math import NUMBER_GROUP_LABELS
@@ -41,8 +52,8 @@ except ImportError:
         "1~9", "10~19", "20~29", "30~39", "40~45"
     )
 
-st.set_page_config(page_title="Lotto64 v4.4.2 Seed Stability", page_icon="🍀", layout="wide")
-st.title("🍀 Lotto64 Ultimate AI v4.4.2 · Top of the Best")
+st.set_page_config(page_title="Lotto64 v4.5 Historical Validation Ledger", page_icon="🍀", layout="wide")
+st.title("🍀 Lotto64 Ultimate AI v4.5 · Historical Validation Ledger")
 st.caption("데이터 · 합계 시계열 · GAP · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
@@ -122,7 +133,7 @@ top_of_best_sets = build_top_of_best_sets(final_bundle["portfolio"])
 tabs = st.tabs([
     "데이터 진단", "합계 시계열", "GAP·EGR", "CEC·DRC", "회차 DNA",
     "후보 번호", "Top of the Best", "GA 최적화", "Walk-forward", "가중치 탐색",
-    "설명", "Final Pattern",
+    "설명", "Final Pattern", "검증 원장",
 ])
 
 with tabs[0]:
@@ -648,7 +659,7 @@ with tabs[10]:
     st.dataframe(explain_number(row), use_container_width=True)
 
 st.divider()
-st.caption("Lotto64 Ultimate AI v4.4 · 고정 Seed + 다중 Seed 안정성 검증")
+st.caption("Lotto64 Ultimate AI v4.5 · Historical Validation Ledger · 엄격 200회 Rolling Walk-forward")
 
 
 
@@ -702,3 +713,244 @@ with tabs[11]:
                 f"top_of_the_best_{size}_final_pattern.csv",
                 key=f"final_top_{size}",
             )
+
+
+with tabs[12]:
+    st.subheader("📒 Historical Validation Ledger")
+    st.caption(
+        "각 검증 회차의 실제 결과를 절대 학습에 포함하지 않고, "
+        "직전 200회만 사용해 Final Pattern을 다시 계산합니다."
+    )
+
+    latest_round = int(cleaned["round"].max())
+    earliest_round = int(cleaned["round"].min())
+    strict_available = max_strict_validation_rounds(
+        cleaned,
+        train_window=200,
+    )
+    required_50 = required_history_start(
+        latest_round,
+        validation_rounds=50,
+        train_window=200,
+    )
+    required_100 = required_history_start(
+        latest_round,
+        validation_rounds=100,
+        train_window=200,
+    )
+
+    a, b, c, d = st.columns(4)
+    a.metric("현재 최초 회차", earliest_round)
+    b.metric("엄격 검증 가능", f"{strict_available}회")
+    c.metric("최근 50회 필요 시작", required_50)
+    d.metric("최근 100회 필요 시작", required_100)
+
+    if strict_available < 100:
+        st.warning(
+            "현재 데이터만으로는 200회 학습창을 유지한 최근 100회 "
+            "Historical Ledger를 만들 수 없습니다. "
+            f"100회 검증에는 {required_100}회부터 데이터가 필요합니다. "
+            "GitHub의 Weekly Lotto Data Update를 수동 실행하면 "
+            "v4.5 workflow가 937회까지 과거 데이터를 백필하도록 설정되어 있습니다."
+        )
+    else:
+        st.success(
+            "최근 100회 엄격 Walk-forward를 실행할 충분한 과거 데이터가 있습니다."
+        )
+
+    saved_ledger = load_saved_ledger()
+
+    if "historical_ledger" not in st.session_state:
+        st.session_state["historical_ledger"] = (
+            saved_ledger if not saved_ledger.empty else None
+        )
+
+    run_col1, run_col2 = st.columns(2)
+
+    def run_ledger(rounds: int):
+        progress = st.progress(
+            0.0,
+            text=f"최근 {rounds}회 Historical Ledger 준비 중...",
+        )
+
+        def ledger_callback(value: float, text: str):
+            progress.progress(value, text=text)
+
+        try:
+            ledger_result = build_historical_ledger(
+                cleaned,
+                validation_rounds=rounds,
+                train_window=200,
+                progress_callback=ledger_callback,
+            )
+            st.session_state["historical_ledger"] = ledger_result
+            save_ledger(ledger_result)
+        except Exception as exc:
+            st.error(f"Historical Ledger 실행 오류: {exc}")
+        finally:
+            progress.empty()
+
+    if run_col1.button(
+        "최근 50회 검증 원장 실행",
+        disabled=strict_available < 50,
+    ):
+        run_ledger(50)
+
+    if run_col2.button(
+        "최근 100회 검증 원장 실행",
+        type="primary",
+        disabled=strict_available < 100,
+    ):
+        run_ledger(100)
+
+    ledger = st.session_state.get("historical_ledger")
+
+    if ledger is not None and not ledger.empty:
+        summary = summarize_ledger(ledger)
+
+        st.markdown(
+            f"### 저장/현재 원장 · "
+            f"{summary['start_round']}~{summary['end_round']}회 "
+            f"({summary['rounds']}회)"
+        )
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric(
+            "후보15 평균 적중",
+            f"{summary['candidate_15_mean']:.2f}",
+        )
+        m2.metric(
+            "BEST20 평균 최고 적중",
+            f"{summary['best20_mean']:.2f}",
+        )
+        m3.metric(
+            "번호합 핵심 적중률",
+            f"{summary['sum_core_rate']:.1%}",
+        )
+        m4.metric(
+            "GAP합 핵심 적중률",
+            f"{summary['gap_sum_core_rate']:.1%}",
+        )
+
+        s1, s2, s3, s4 = st.columns(4)
+        s1.metric(
+            "BEST20 3+ 비율",
+            f"{summary['best20_3plus_rate']:.1%}",
+        )
+        s2.metric(
+            "BEST20 4+ 비율",
+            f"{summary['best20_4plus_rate']:.1%}",
+        )
+        s3.metric(
+            "번호합 MAE",
+            f"{summary['sum_mae']:.2f}",
+        )
+        s4.metric(
+            "GAP합 MAE",
+            f"{summary['gap_sum_mae']:.2f}",
+        )
+
+        st.markdown("#### 이전 50회 vs 최근 50회")
+        comparison = compare_previous_recent(
+            ledger,
+            window=50,
+        )
+        if not comparison.empty:
+            st.dataframe(
+                comparison,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        st.markdown("#### 실패 원인 누적")
+        failures = failure_counts(ledger)
+        if not failures.empty:
+            f1, f2 = st.columns([1, 2])
+            with f1:
+                st.dataframe(
+                    failures,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            with f2:
+                st.bar_chart(
+                    failures.set_index("failure")["count"]
+                )
+
+        st.markdown("#### 누적 검증 추세")
+        cumulative = cumulative_metrics(ledger)
+        if not cumulative.empty:
+            st.line_chart(
+                cumulative.set_index("round")[
+                    [
+                        "candidate_15_mean",
+                        "best20_mean",
+                        "sum_core_rate",
+                        "gap_sum_core_rate",
+                    ]
+                ]
+            )
+
+        st.markdown("#### 회차별 검증 원장")
+        display_columns = [
+            "round",
+            "date",
+            "actual_numbers",
+            "candidate_11_hits",
+            "candidate_13_hits",
+            "candidate_15_hits",
+            "best5_max_hit",
+            "best10_max_hit",
+            "best15_max_hit",
+            "best20_max_hit",
+            "actual_sum",
+            "predicted_sum_center",
+            "sum_core_hit",
+            "actual_gap_sum",
+            "predicted_gap_sum_center",
+            "gap_sum_core_hit",
+            "master_top20_hits",
+            "primary_failure",
+            "failure_reasons",
+        ]
+        available_columns = [
+            col for col in display_columns
+            if col in ledger.columns
+        ]
+        st.dataframe(
+            ledger[available_columns].sort_values(
+                "round",
+                ascending=False,
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        dl1, dl2 = st.columns(2)
+        dl1.download_button(
+            "Historical Ledger CSV",
+            csv_bytes(ledger),
+            "historical_validation_ledger.csv",
+        )
+        dl2.download_button(
+            "Historical Summary JSON",
+            json.dumps(
+                {
+                    "summary": summary,
+                    "failure_counts": failures.to_dict(
+                        orient="records"
+                    ),
+                },
+                ensure_ascii=False,
+                indent=2,
+            ).encode("utf-8"),
+            "historical_validation_summary.json",
+            "application/json",
+        )
+
+        st.info(
+            "실패 원장은 과거 100회를 모델 개선에 맞춰 다시 골라내는 용도가 아니라, "
+            "어느 단계에서 손실이 반복되는지 진단하는 기준선입니다. "
+            "v4.5 규칙을 고정한 뒤 이후 실제 회차에서도 같은 지표를 계속 누적하는 "
+            "방식으로 사용하는 것이 핵심입니다."
+        )
