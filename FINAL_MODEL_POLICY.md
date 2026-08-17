@@ -66,3 +66,28 @@ Final Pattern 통합 점수와 포트폴리오 분산 규칙으로 최대 20조�
 - BEST 20: 1~20위
 
 따라서 BEST 5/10/15/20은 서로 다른 추천 세트가 아니라 동일한 Top20의 누적형 보기입니다.
+
+
+## Number Groups v4.3.3
+
+- 1~9
+- 10~19
+- 20~29
+- 30~39
+- 40~45
+
+중앙 `zone_index()` / `zone_counts()` 함수에 정의하여 Pattern Master, Final Pattern, 회차 DNA, 조합 필터와 zone recovery에 동일하게 적용합니다.
+
+
+## Seed 운영 원칙 v4.4
+
+- 실전/기본 백테스트 기준 Seed: `20260720` 고정
+- 결과가 좋을 때까지 Seed를 바꾸는 방식은 금지
+- 다중 Seed는 3/5/7회 반복 검증만 허용
+- 기본 다중 Seed 수: 5
+- GA에서는 조합 반복률과 번호 노출 안정성을 측정
+- Walk-forward에서는 Seed별 적중 결과의 분산과 일치율을 측정
+- Top of the Best Final Pattern은 결정론적 계산이므로 Seed와 독립적
+
+Seed 안정성은 당첨확률이 아니라 '랜덤 탐색 알고리즘의 결과 민감도'를
+평가하는 품질관리 지표입니다.
