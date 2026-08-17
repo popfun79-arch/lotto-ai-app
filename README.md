@@ -1,4 +1,4 @@
-# Lotto64 Ultimate AI v4.4 — Top of the Best + Seed Stability
+# Lotto64 Ultimate AI v4.5 — Historical Validation Ledger
 
 Python 통계·시계열 분석을 기본 베이스로 하고, Gail Howard의 Lottery Master Guide 계열에서 공개적으로 강조되는 Games Out/Skips, Number Groups, Last Digits, Odd-Even, High-Low, Hot/Cold, Sum Balance 성격의 분석 주제를 결합한 연구용 Lotto64 프로젝트입니다.
 
@@ -91,3 +91,27 @@ v4.4부터 Lotto64의 랜덤 탐색은 다음 원칙으로 운영합니다.
 
 Final Pattern 기반 Top of the Best는 완전탐색/결정론적 랭킹이므로
 Seed가 바뀌어도 자체 결과는 바뀌지 않습니다.
+
+
+## v4.5 Historical Validation Ledger
+
+과거 회차를 단순 재분석하지 않고, 각 목표 회차 직전 200회만 사용하여
+한 회차씩 다시 예측하는 엄격한 Rolling Walk-forward 검증 장부입니다.
+
+기록 항목:
+- 후보 11/13/15수 적중
+- BEST 5/10/15/20 최고 적중
+- 번호합 예측
+- GAP합 예측
+- Number Groups
+- GAP 구간 구성
+- Pattern Master 순위
+- 주요 실패 원인
+
+최근 100회를 엄격하게 검증하려면 300개 연속 회차가 필요합니다.
+Weekly Lotto Data Update는 v4.5부터 937회까지 과거 데이터를 자동 백필하고,
+검증 원장을 생성하여 `reports/`에 저장합니다.
+
+Historical Ledger의 목적은 과거 적중률을 최대화하는 것이 아니라
+`후보 → 번호합/GAP합 → 조합 → 포트폴리오` 중 어느 단계에서
+손실이 반복되는지 확인하는 것입니다.
