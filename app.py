@@ -12,7 +12,11 @@ from lotto64.analysis.similarity import similar_rounds
 from lotto64.analysis.state import cec_drc_backtest
 from lotto64.analysis.sum_series import build_sum_series, compare_sum_windows, forecast_next_sum
 from lotto64.backtest.walk_forward import summarize, walk_forward
-from lotto64.config import RunConfig
+from lotto64.backtest.seed_stability import (
+    ga_seed_stability,
+    walk_forward_seed_stability,
+)
+from lotto64.config import DEFAULT_MULTI_SEED_COUNT, FIXED_SEED, RunConfig
 from lotto64.data.storage import load_best_available, sync_sqlite, write_csv
 from lotto64.data.updater import update_latest
 from lotto64.models.bayesian import bayesian_style_weight_search
@@ -23,8 +27,8 @@ from lotto64.recommend.final_pattern import final_recommendation_bundle
 from lotto64.recommend.top_of_best import build_top_of_best_sets
 from lotto64.reports.reporting import build_backtest_report, csv_bytes, json_bytes
 
-st.set_page_config(page_title="Lotto64 v4.1 Top of the Best", page_icon="🍀", layout="wide")
-st.title("🍀 Lotto64 Ultimate AI v4.3.2 · Top of the Best")
+st.set_page_config(page_title="Lotto64 v4.4 Seed Stability", page_icon="🍀", layout="wide")
+st.title("🍀 Lotto64 Ultimate AI v4.4 · Top of the Best")
 st.caption("데이터 · 합계 시계열 · GAP · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
@@ -43,7 +47,25 @@ with st.sidebar:
     similarity_k = st.slider("유사 회차 수", 5, 30, 15)
     egr_threshold = st.slider("EGR 임계 GAP", 12, 25, 17)
     egr_horizon = st.slider("EGR 관찰 기간", 2, 8, 4)
-    seed = st.number_input("난수 시드", value=20260720, step=1)
+    seed = st.number_input(
+        "고정 기준 Seed",
+        value=FIXED_SEED,
+        step=1,
+        disabled=True,
+        help=(
+            "실전 추천과 기본 백테스트를 동일 조건으로 재현하기 위한 "
+            "고정 Seed입니다. Seed 값 자체에는 예측력이 없습니다."
+        ),
+    )
+    multi_seed_count = st.select_slider(
+        "다중 Seed 검증 수",
+        options=[3, 5, 7],
+        value=DEFAULT_MULTI_SEED_COUNT,
+        help=(
+            "동일 데이터와 모델을 여러 Seed에서 반복해 랜덤 탐색의 "
+            "민감도와 안정성을 확인합니다."
+        ),
+    )
     uploaded = st.file_uploader("CSV 또는 JSON", type=["csv", "json"])
 
     st.divider()
@@ -61,7 +83,7 @@ config = RunConfig(
     similarity_k=similarity_k,
     egr_threshold=egr_threshold,
     egr_horizon=egr_horizon,
-    seed=int(seed),
+    seed=FIXED_SEED,
 )
 
 try:
@@ -223,6 +245,14 @@ with tabs[6]:
         "실제 고유 추천은 최대 20조합이며, 5·10·15는 같은 Top20의 상위 구간입니다."
     )
 
+    st.caption("Number Groups 적용 구간: " + " · ".join(NUMBER_GROUP_LABELS))
+
+    st.caption(
+        f"Top of the Best Final Pattern은 결정론적 계산이므로 Seed에 직접 "
+        f"영향받지 않습니다. 고정 Seed {FIXED_SEED}와 다중 Seed 검증은 "
+        "GA/랜덤 조합 탐색의 안정성 확인에 사용됩니다."
+    )
+
     final_context = final_bundle["context"]
     sum_fc = final_context["sum_forecast"]
     gap_fc = final_context["gap_sum_forecast"]
@@ -279,29 +309,146 @@ with tabs[6]:
 
 with tabs[7]:
     st.subheader("유전자 알고리즘 조합 최적화")
+    st.caption(
+        f"고정 기준 Seed = {FIXED_SEED}. 같은 데이터/설정이면 같은 "
+        "GA 결과를 재현합니다."
+    )
+
     population = st.slider("개체 수", 100, 1000, 400, 100)
     generations = st.slider("세대 수", 5, 60, 25, 5)
 
-    if st.button("GA 실행"):
-        scores = number_scores(analysis, egr_threshold=egr_threshold, similarity_k=similarity_k)
-        with st.spinner("GA 진화 중..."):
+    if "ga_result" not in st.session_state:
+        st.session_state["ga_result"] = None
+    if "ga_seed_stability" not in st.session_state:
+        st.session_state["ga_seed_stability"] = None
+
+    if st.button("고정 Seed GA 실행"):
+        scores = number_scores(
+            analysis,
+            egr_threshold=egr_threshold,
+            similarity_k=similarity_k,
+        )
+        with st.spinner("고정 Seed GA 진화 중..."):
             ga_ranked = ga_optimize(
                 analysis,
                 scores,
                 candidate_count=max(candidate_count, 18),
                 population_size=population,
                 generations=generations,
-                seed=int(seed),
+                seed=FIXED_SEED,
             )
-        ga_top = build_portfolio(ga_ranked, size=20, max_jaccard=0.50)
+        ga_top = build_portfolio(
+            ga_ranked,
+            size=20,
+            max_jaccard=0.50,
+        )
+        st.session_state["ga_result"] = ga_top
+
+    ga_top = st.session_state.get("ga_result")
+    if ga_top is not None and not ga_top.empty:
         display = ga_top.copy()
-        if not display.empty:
-            display["combination"] = display["combination"].apply(lambda x: " ".join(map(str, x)))
+        display["combination"] = display["combination"].apply(
+            lambda x: " ".join(map(str, x))
+        )
+        st.markdown("#### 고정 Seed GA TOP20")
+        st.dataframe(display, use_container_width=True)
+        st.download_button(
+            "고정 Seed GA TOP20 다운로드",
+            csv_bytes(display),
+            "ga_fixed_seed_top20.csv",
+        )
+
+    st.divider()
+    st.markdown("### 다중 Seed 안정성 검증")
+    st.info(
+        "좋은 결과가 나온 Seed를 골라내는 기능이 아닙니다. "
+        "같은 설정을 여러 Seed에서 반복해 어떤 조합/번호가 반복적으로 "
+        "살아남는지 확인하는 검증 기능입니다."
+    )
+
+    if st.button("GA 다중 Seed 안정성 실행", type="primary"):
+        scores = number_scores(
+            analysis,
+            egr_threshold=egr_threshold,
+            similarity_k=similarity_k,
+        )
+        progress = st.progress(0.0, text="Seed 안정성 준비 중...")
+
+        def ga_seed_callback(value: float, text: str):
+            progress.progress(value, text=text)
+
+        try:
+            stability = ga_seed_stability(
+                analysis,
+                scores,
+                candidate_count=max(candidate_count, 18),
+                population_size=population,
+                generations=generations,
+                seed_count=int(multi_seed_count),
+                top_n=20,
+                base_seed=FIXED_SEED,
+                progress_callback=ga_seed_callback,
+            )
+            st.session_state["ga_seed_stability"] = stability
+        finally:
+            progress.empty()
+
+    stability = st.session_state.get("ga_seed_stability")
+    if stability:
+        metrics = stability.get("metrics", {})
+        if metrics:
+            a, b, c, d = st.columns(4)
+            a.metric("검증 Seed 수", metrics["seed_count"])
+            b.metric(
+                "2개 Seed 이상 반복 조합",
+                metrics["stable_combo_2plus"],
+            )
+            c.metric(
+                "3개 Seed 이상 반복 조합",
+                metrics["stable_combo_3plus"],
+            )
+            d.metric(
+                "번호 노출 상관",
+                f"{metrics['number_exposure_correlation']:.3f}",
+            )
+
+            st.caption(
+                "조합 Jaccard가 낮아도 번호 노출 상관이 높으면 "
+                "정확한 6개 조합은 달라도 핵심 번호 구조는 비슷하다는 뜻입니다."
+            )
+
+        consensus = stability.get("combo_consensus")
+        if consensus is not None and not consensus.empty:
+            st.markdown("#### Seed Consensus 조합")
+            display = consensus.head(30).copy()
+            display["combination"] = display["combination"].apply(
+                lambda x: " ".join(map(str, x))
+            )
             st.dataframe(display, use_container_width=True)
-            st.download_button("GA TOP20 다운로드", csv_bytes(display), "ga_top20.csv")
+            st.download_button(
+                "Seed Consensus 조합 CSV",
+                csv_bytes(display),
+                "ga_seed_consensus.csv",
+            )
+
+        number_stability = stability.get("number_stability")
+        if number_stability is not None and not number_stability.empty:
+            st.markdown("#### 번호별 Seed 안정성")
+            st.dataframe(
+                number_stability.head(45),
+                use_container_width=True,
+            )
+            st.download_button(
+                "번호 Seed 안정성 CSV",
+                csv_bytes(number_stability),
+                "number_seed_stability.csv",
+            )
 
 with tabs[8]:
     st.subheader("Walk-forward 백테스트")
+    st.caption(
+        f"기본 백테스트는 고정 Seed {FIXED_SEED}를 사용해 재현성을 유지합니다."
+    )
     if "walk_result" not in st.session_state:
         st.session_state["walk_result"] = None
 
@@ -317,7 +464,7 @@ with tabs[8]:
                 train_window=recent_window,
                 candidate_count=min(candidate_count, 18),
                 top_combos=10,
-                seed=int(seed),
+                seed=FIXED_SEED,
                 progress_callback=callback,
             )
             st.session_state["walk_result"] = result
@@ -358,6 +505,92 @@ with tabs[8]:
         a.download_button("백테스트 CSV", csv_bytes(result), "walk_forward.csv")
         b.download_button("요약 JSON", json_bytes(report), "walk_forward_report.json", "application/json")
 
+    st.divider()
+    st.markdown("### 다중 Seed Walk-forward 안정성")
+    seed_validation_rounds = st.slider(
+        "Seed 안정성 검증 회차",
+        min_value=10,
+        max_value=30,
+        value=min(20, backtest_rounds),
+        step=5,
+        help=(
+            "계산량을 고려해 최근 10~30회에서 여러 Seed를 반복합니다. "
+            "기본 Walk-forward 50회와는 별도의 민감도 검증입니다."
+        ),
+    )
+
+    if "multi_seed_walk" not in st.session_state:
+        st.session_state["multi_seed_walk"] = None
+
+    if st.button("다중 Seed Walk-forward 실행"):
+        progress = st.progress(0.0, text="다중 Seed 백테스트 준비 중...")
+
+        def seed_walk_callback(value: float, text: str):
+            progress.progress(value, text=text)
+
+        try:
+            multi_result = walk_forward_seed_stability(
+                cleaned,
+                rounds=min(
+                    seed_validation_rounds,
+                    max(1, len(cleaned) - 60),
+                ),
+                train_window=recent_window,
+                candidate_count=min(candidate_count, 18),
+                top_combos=10,
+                seed_count=int(multi_seed_count),
+                base_seed=FIXED_SEED,
+                progress_callback=seed_walk_callback,
+            )
+            st.session_state["multi_seed_walk"] = multi_result
+        finally:
+            progress.empty()
+
+    multi_result = st.session_state.get("multi_seed_walk")
+    if multi_result:
+        metrics = multi_result.get("metrics", {})
+        if metrics:
+            a, b, c, d = st.columns(4)
+            a.metric("Seed 수", metrics["seed_count"])
+            b.metric(
+                "평균 TOP조합 최고 적중",
+                f"{metrics['mean_top_combo_hit']:.3f}",
+            )
+            c.metric(
+                "회차별 Seed 완전 일치율",
+                f"{metrics['all_seed_agreement_pct']:.1f}%",
+            )
+            d.metric(
+                "평균 Seed 표준편차",
+                f"{metrics['mean_seed_std']:.3f}",
+            )
+
+        by_seed = multi_result.get("by_seed")
+        if by_seed is not None and not by_seed.empty:
+            st.markdown("#### Seed별 성능")
+            st.dataframe(by_seed, use_container_width=True)
+
+        by_round = multi_result.get("by_round")
+        if by_round is not None and not by_round.empty:
+            st.markdown("#### 회차별 Seed 민감도")
+            st.dataframe(by_round, use_container_width=True)
+            st.line_chart(
+                by_round.set_index("round")[
+                    [
+                        "top_combo_hit_mean",
+                        "top_combo_hit_std",
+                    ]
+                ]
+            )
+
+        runs = multi_result.get("runs")
+        if runs is not None and not runs.empty:
+            st.download_button(
+                "다중 Seed Walk-forward 전체 CSV",
+                csv_bytes(runs),
+                "walk_forward_multi_seed.csv",
+            )
+
 with tabs[9]:
     st.subheader("가중치 확률적 탐색")
     trials = st.slider("탐색 횟수", 3, 20, 6)
@@ -370,7 +603,7 @@ with tabs[9]:
                 train_window=recent_window,
                 candidate_count=16,
                 top_combos=5,
-                seed=int(seed),
+                seed=FIXED_SEED,
                 weights=weights,
             )
             return (
@@ -380,7 +613,7 @@ with tabs[9]:
             )
 
         with st.spinner("가중치 탐색 중..."):
-            best, history = bayesian_style_weight_search(objective, trials=trials, seed=int(seed))
+            best, history = bayesian_style_weight_search(objective, trials=trials, seed=FIXED_SEED)
 
         st.dataframe(pd.DataFrame([{"feature": k, "weight": v} for k, v in best.items()]), use_container_width=True)
         st.dataframe(history, use_container_width=True)
@@ -401,7 +634,7 @@ with tabs[10]:
     st.dataframe(explain_number(row), use_container_width=True)
 
 st.divider()
-st.caption("Lotto64 Ultimate AI v4.3.2 · 최신 200회 분석 · 일요일 04:10 자동 업데이트")
+st.caption("Lotto64 Ultimate AI v4.4 · 고정 Seed + 다중 Seed 안정성 검증")
 
 
 
@@ -411,6 +644,8 @@ with tabs[11]:
         "Drawings Since Hit·Skip/Hit·Skips Due·Number Groups·Last Digits·"
         "Odd/Even·High/Low 성격의 패턴과 Python 시계열/GAP/DNA를 결합합니다."
     )
+
+    st.caption("Number Groups: " + " · ".join(NUMBER_GROUP_LABELS))
 
     final_candidates = final_bundle["candidate_sets"]
     final_context = final_bundle["context"]
