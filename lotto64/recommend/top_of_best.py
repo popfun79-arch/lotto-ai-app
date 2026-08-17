@@ -64,3 +64,4 @@ def validate_nested_sets(
         previous = current
 
     return True
+
