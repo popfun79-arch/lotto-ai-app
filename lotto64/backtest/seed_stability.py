@@ -8,7 +8,10 @@ import numpy as np
 import pandas as pd
 
 from lotto64.backtest.walk_forward import walk_forward
-from lotto64.config import FIXED_SEED
+try:
+    from lotto64.config import FIXED_SEED
+except ImportError:
+    FIXED_SEED = 20260720
 from lotto64.recommend.ga import ga_optimize
 from lotto64.recommend.portfolio import build_portfolio
 
