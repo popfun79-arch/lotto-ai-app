@@ -43,6 +43,7 @@ def walk_forward(
 
         record = {
             "round": round_no,
+            "seed": int(seed),
             "actual_sum": actual_sum,
             "predicted_sum_center": sum_forecast.target_center,
             "predicted_sum_low": sum_forecast.target_low,
