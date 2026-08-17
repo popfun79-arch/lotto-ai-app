@@ -16,7 +16,13 @@ from lotto64.backtest.seed_stability import (
     ga_seed_stability,
     walk_forward_seed_stability,
 )
-from lotto64.config import DEFAULT_MULTI_SEED_COUNT, FIXED_SEED, RunConfig
+from lotto64.config import RunConfig
+
+try:
+    from lotto64.config import DEFAULT_MULTI_SEED_COUNT, FIXED_SEED
+except ImportError:
+    FIXED_SEED = 20260720
+    DEFAULT_MULTI_SEED_COUNT = 5
 from lotto64.data.storage import load_best_available, sync_sqlite, write_csv
 from lotto64.data.updater import update_latest
 from lotto64.models.bayesian import bayesian_style_weight_search
@@ -28,7 +34,7 @@ from lotto64.recommend.top_of_best import build_top_of_best_sets
 from lotto64.reports.reporting import build_backtest_report, csv_bytes, json_bytes
 
 st.set_page_config(page_title="Lotto64 v4.4 Seed Stability", page_icon="🍀", layout="wide")
-st.title("🍀 Lotto64 Ultimate AI v4.4 · Top of the Best")
+st.title("🍀 Lotto64 Ultimate AI v4.4.1 · Top of the Best")
 st.caption("데이터 · 합계 시계열 · GAP · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
