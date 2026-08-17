@@ -67,4 +67,5 @@ jobs:
             tests/test_v45_historical_ledger.py \
             tests/test_v45_history_backfill.py \
             tests/test_v451_compat_hotfix.py \
+            tests/test_v452_history_csv.py \
             tests/test_smoke.py
