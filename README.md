@@ -1,4 +1,4 @@
-# Lotto64 Ultimate AI v4.3 — Top of the Best Edition
+# Lotto64 Ultimate AI v4.4 — Top of the Best + Seed Stability
 
 Python 통계·시계열 분석을 기본 베이스로 하고, Gail Howard의 Lottery Master Guide 계열에서 공개적으로 강조되는 Games Out/Skips, Number Groups, Last Digits, Odd-Even, High-Low, Hot/Cold, Sum Balance 성격의 분석 주제를 결합한 연구용 Lotto64 프로젝트입니다.
 
@@ -63,3 +63,31 @@ Streamlit Cloud:
 ## 주의
 
 로또는 무작위 추첨입니다. 이 프로젝트의 점수와 패턴은 과거 데이터에 대한 상대적 순위·검증 지표이며 실제 당첨을 보장하지 않습니다.
+
+
+## Number Groups v4.3.3
+
+`1~9 / 10~19 / 20~29 / 30~39 / 40~45` 구간을 사용합니다.
+이 기준은 후보번호 점수, Number Group Recovery, 회차 DNA, 조합 구간 분산/필터, Top of the Best 최종 랭킹에 공통 적용됩니다.
+
+
+## Seed Stability
+
+v4.4부터 Lotto64의 랜덤 탐색은 다음 원칙으로 운영합니다.
+
+- 고정 기준 Seed: `20260720`
+- 기본 다중 Seed 검증: 5개
+- 선택 가능한 검증 수: 3 / 5 / 7
+- 좋은 Seed를 사후 선택하지 않음
+- 동일 설정에서 결과가 여러 Seed에서도 반복되는지를 검증
+
+### GA 안정성
+정확히 같은 조합이 여러 Seed에서 반복되는 비율과 번호별 노출 패턴을
+분석합니다.
+
+### Walk-forward 안정성
+같은 과거 회차를 여러 Seed로 다시 예측해 TOP 조합 최고 적중수의
+표준편차와 Seed 일치율을 측정합니다.
+
+Final Pattern 기반 Top of the Best는 완전탐색/결정론적 랭킹이므로
+Seed가 바뀌어도 자체 결과는 바뀌지 않습니다.
