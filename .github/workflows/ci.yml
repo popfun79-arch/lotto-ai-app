@@ -32,6 +32,7 @@ jobs:
         run: |
           python -m py_compile app.py
           python -m py_compile update_lotto.py
+          python -m py_compile ledger_cli.py
           python -m compileall -q lotto64
 
       - name: Import check
@@ -45,6 +46,7 @@ jobs:
           python -c "from lotto64.config import FIXED_SEED, DEFAULT_MULTI_SEED_COUNT; print('Seed config OK:', FIXED_SEED, DEFAULT_MULTI_SEED_COUNT)"
           python -c "from lotto64.backtest.seed_stability import build_seed_set; print('Seed stability OK:', build_seed_set())"
           python -c "from lotto64.utils.lotto_math import NUMBER_GROUP_LABELS; print('Number Group labels OK:', NUMBER_GROUP_LABELS)"
+          python -c "from lotto64.backtest.historical_ledger import required_history_start; print('Historical Ledger OK:', required_history_start(1236,100,200))"
 
       - name: Tests
         run: |
@@ -61,4 +63,6 @@ jobs:
             tests/test_v44_seed_stability.py \
             tests/test_v441_seed_import_hotfix.py \
             tests/test_v442_number_group_label_hotfix.py \
+            tests/test_v45_historical_ledger.py \
+            tests/test_v45_history_backfill.py \
             tests/test_smoke.py
