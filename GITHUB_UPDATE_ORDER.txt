@@ -1,9 +1,19 @@
-Lotto64 v4.3.2 표시 수정
+Lotto64 v4.4.1 Seed Import Hotfix
 
-핵심:
-- 전체 데이터 213회는 유지
-- 분석 화면의 '회차 수'를 최신 분석 범위 200회로 표시
-- 분석 시작 회차도 전체 1024가 아니라 최신 200회 시작점 1037로 표시
+현재 Streamlit 오류:
+ImportError: lotto64.config 에서 FIXED_SEED를 불러오지 못함
 
-권장 커밋:
-Fix Lotto64 v4.3.2 analysis count display
+권장: ZIP 내부 경로 그대로 한 번에 덮어쓰기.
+
+특히 반드시 교체:
+1. lotto64/config.py
+2. lotto64/backtest/seed_stability.py
+3. app.py
+
+커밋 메시지:
+Fix Lotto64 v4.4.1 seed import compatibility
+
+반영 후:
+- GitHub Actions -> Lotto64 CI 초록색 확인
+- Streamlit 새로고침
+- 그래도 이전 오류 화면이면 Streamlit Manage app -> Reboot app
