@@ -4,19 +4,32 @@ from typing import Sequence
 
 from lotto64.config import PRIMES
 
+# Lotto64 v4.3.3 Number Groups
+# 1~9 / 10~19 / 20~29 / 30~39 / 40~45
+NUMBER_GROUPS: tuple[tuple[int, int], ...] = (
+    (1, 9),
+    (10, 19),
+    (20, 29),
+    (30, 39),
+    (40, 45),
+)
+
+NUMBER_GROUP_LABELS: tuple[str, ...] = tuple(
+    f"{start}~{end}" for start, end in NUMBER_GROUPS
+)
+
 def zone_index(number: int) -> int:
-    if number <= 10:
-        return 0
-    if number <= 20:
-        return 1
-    if number <= 30:
-        return 2
-    if number <= 40:
-        return 3
-    return 4
+    """Return the Number Group index for a Lotto 6/45 number."""
+    value = int(number)
+    if not 1 <= value <= 45:
+        raise ValueError(f"로또 번호 범위 오류: {value}")
+    for index, (start, end) in enumerate(NUMBER_GROUPS):
+        if start <= value <= end:
+            return index
+    raise ValueError(f"Number Group을 찾지 못했습니다: {value}")
 
 def zone_counts(numbers: Sequence[int]) -> tuple[int, int, int, int, int]:
-    counts = [0, 0, 0, 0, 0]
+    counts = [0] * len(NUMBER_GROUPS)
     for number in numbers:
         counts[zone_index(int(number))] += 1
     return tuple(counts)
