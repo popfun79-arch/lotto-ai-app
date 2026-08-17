@@ -14,6 +14,10 @@ REQUIRED_COLUMNS = ["round", "date", *MAIN_COLUMNS, "bonus"]
 NUMBERS = list(range(1, 46))
 PRIMES = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43}
 
+# 실전 추천/기본 백테스트 재현성을 위한 고정 기준 Seed
+FIXED_SEED = 20260720
+DEFAULT_MULTI_SEED_COUNT = 5
+
 DEFAULT_WEIGHTS = {
     "long_frequency": 0.08,
     "short_frequency": 0.08,
@@ -31,13 +35,13 @@ DEFAULT_WEIGHTS = {
 
 @dataclass(frozen=True)
 class RunConfig:
-    recent_window: int = 300
+    recent_window: int = 200
     backtest_rounds: int = 50
     candidate_count: int = 18
     similarity_k: int = 15
     egr_threshold: int = 17
     egr_horizon: int = 4
-    seed: int = 20260720
+    seed: int = FIXED_SEED
     top_n: int = 20
 
     def to_dict(self) -> dict:
