@@ -4,7 +4,7 @@ import argparse
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from lotto64.data.updater import update_latest
+from lotto64.data.updater import ensure_history_start, update_latest
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -48,11 +48,21 @@ def main():
     )
     parser.add_argument("--max-checks", type=int, default=20)
     parser.add_argument(
+        "--history-start",
+        type=int,
+        default=None,
+        help="Historical Ledger용 과거 데이터 시작 회차를 보충",
+    )
+    parser.add_argument(
         "--require-expected",
         action="store_true",
         help="한국 시각 기준 예상 최신 회차보다 데이터가 뒤처지면 실패",
     )
     args = parser.parse_args()
+
+    backfill_count = 0
+    if args.history_start is not None:
+        _, backfill_count = ensure_history_start(args.history_start)
 
     df, new_count = update_latest(max_checks=args.max_checks)
 
@@ -60,8 +70,8 @@ def main():
     expected = expected_latest_round_kst()
 
     print(
-        f"신규 {new_count}회 / 최신 {latest}회 / "
-        f"예상 최신 {expected}회 / 전체 {len(df)}회"
+        f"과거 백필 {backfill_count}회 / 신규 {new_count}회 / "
+        f"최신 {latest}회 / 예상 최신 {expected}회 / 전체 {len(df)}회"
     )
 
     if args.require_expected and latest < expected:
