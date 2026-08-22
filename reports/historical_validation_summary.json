@@ -1,0 +1,50 @@
+{
+  "summary": {
+    "rounds": 100,
+    "start_round": 1139,
+    "end_round": 1238,
+    "candidate_11_mean": 1.61,
+    "candidate_13_mean": 1.84,
+    "candidate_15_mean": 2.18,
+    "best5_mean": 1.47,
+    "best10_mean": 1.7,
+    "best15_mean": 1.9,
+    "best20_mean": 1.97,
+    "best20_3plus_rate": 0.21,
+    "best20_4plus_rate": 0.02,
+    "sum_core_rate": 0.49,
+    "sum_wide_rate": 0.79,
+    "sum_mae": 23.865,
+    "gap_sum_core_rate": 0.56,
+    "gap_sum_wide_rate": 0.83,
+    "gap_sum_mae": 12.585,
+    "master_top20_mean_hits": 2.83
+  },
+  "failure_counts": [
+    {
+      "failure": "후보번호 단계 미포착",
+      "count": 66,
+      "rate": 0.66
+    },
+    {
+      "failure": "번호합 핵심구간 이탈",
+      "count": 17,
+      "rate": 0.17
+    },
+    {
+      "failure": "GAP합 핵심구간 이탈",
+      "count": 11,
+      "rate": 0.11
+    },
+    {
+      "failure": "조합 구성/포트폴리오 단계 손실",
+      "count": 4,
+      "rate": 0.04
+    },
+    {
+      "failure": "주요 구조 적합·무작위 변동",
+      "count": 2,
+      "rate": 0.02
+    }
+  ]
+}
