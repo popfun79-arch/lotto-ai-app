@@ -1,30 +1,30 @@
 {
   "summary": {
     "rounds": 100,
-    "start_round": 1139,
-    "end_round": 1238,
-    "candidate_11_mean": 1.61,
-    "candidate_13_mean": 1.84,
-    "candidate_15_mean": 2.18,
+    "start_round": 1140,
+    "end_round": 1239,
+    "candidate_11_mean": 1.6,
+    "candidate_13_mean": 1.83,
+    "candidate_15_mean": 2.16,
     "best5_mean": 1.47,
-    "best10_mean": 1.7,
+    "best10_mean": 1.69,
     "best15_mean": 1.9,
     "best20_mean": 1.97,
     "best20_3plus_rate": 0.21,
     "best20_4plus_rate": 0.02,
     "sum_core_rate": 0.49,
     "sum_wide_rate": 0.79,
-    "sum_mae": 23.865,
-    "gap_sum_core_rate": 0.56,
+    "sum_mae": 23.935,
+    "gap_sum_core_rate": 0.57,
     "gap_sum_wide_rate": 0.83,
-    "gap_sum_mae": 12.585,
-    "master_top20_mean_hits": 2.83
+    "gap_sum_mae": 12.565,
+    "master_top20_mean_hits": 2.82
   },
   "failure_counts": [
     {
       "failure": "후보번호 단계 미포착",
-      "count": 66,
-      "rate": 0.66
+      "count": 67,
+      "rate": 0.67
     },
     {
       "failure": "번호합 핵심구간 이탈",
@@ -33,8 +33,8 @@
     },
     {
       "failure": "GAP합 핵심구간 이탈",
-      "count": 11,
-      "rate": 0.11
+      "count": 10,
+      "rate": 0.1
     },
     {
       "failure": "조합 구성/포트폴리오 단계 손실",
