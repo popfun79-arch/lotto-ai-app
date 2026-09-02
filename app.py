@@ -11,14 +11,29 @@ from lotto64.analysis.gap import current_gap_table, gap_distribution
 from lotto64.analysis.similarity import similar_rounds
 from lotto64.analysis.state import cec_drc_backtest
 from lotto64.analysis.sum_series import build_sum_series, compare_sum_windows, forecast_next_sum
-from lotto64.analysis.skip_pattern import (
-    build_empirical_hazard,
-    build_skip_period_history,
-    current_skip_profile,
-    forecast_next_skip_pattern,
-    skip_period_distribution,
-    skip_sum_distribution,
-)
+try:
+    from lotto64.analysis.skip_pattern import (
+        build_empirical_hazard,
+        build_skip_period_history,
+        current_skip_profile,
+        forecast_next_skip_pattern,
+        skip_period_distribution,
+        skip_sum_distribution,
+    )
+except ImportError:
+    # Streamlit hot reload can retain the previous module object while app.py
+    # already references newly deployed functions. Reload once from disk so an
+    # atomic Git commit also becomes atomic in the long-running app process.
+    import importlib
+    from lotto64.analysis import skip_pattern as _skip_pattern
+
+    _skip_pattern = importlib.reload(_skip_pattern)
+    build_empirical_hazard = _skip_pattern.build_empirical_hazard
+    build_skip_period_history = _skip_pattern.build_skip_period_history
+    current_skip_profile = _skip_pattern.current_skip_profile
+    forecast_next_skip_pattern = _skip_pattern.forecast_next_skip_pattern
+    skip_period_distribution = _skip_pattern.skip_period_distribution
+    skip_sum_distribution = _skip_pattern.skip_sum_distribution
 from lotto64.backtest.walk_forward import summarize, walk_forward
 from lotto64.backtest.seed_stability import (
     ga_seed_stability,
