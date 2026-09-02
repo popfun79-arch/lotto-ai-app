@@ -11,37 +11,7 @@ import pandas as pd
 from lotto64.analysis.gap import current_gap_table, row_numbers
 from lotto64.models.pattern_master import gap_bucket
 from lotto64.recommend.final_pattern import final_recommendation_bundle
-try:
-    from lotto64.utils.lotto_math import NUMBER_GROUP_LABELS, zone_counts
-except ImportError:
-    # Partial-deployment safety:
-    # preserve the v4.3.3+ Number Groups even if lotto_math.py is one commit behind.
-    NUMBER_GROUP_LABELS = (
-        "1~9",
-        "10~19",
-        "20~29",
-        "30~39",
-        "40~45",
-    )
-
-    def zone_counts(numbers):
-        counts = [0, 0, 0, 0, 0]
-        for raw in numbers:
-            number = int(raw)
-            if not 1 <= number <= 45:
-                raise ValueError(f"로또 번호 범위 오류: {number}")
-            if number <= 9:
-                index = 0
-            elif number <= 19:
-                index = 1
-            elif number <= 29:
-                index = 2
-            elif number <= 39:
-                index = 3
-            else:
-                index = 4
-            counts[index] += 1
-        return tuple(counts)
+from lotto64.utils.lotto_math import NUMBER_GROUP_LABELS, zone_counts
 
 
 DEFAULT_LEDGER_PATH = Path("reports/historical_validation_ledger.csv")
@@ -213,6 +183,7 @@ def evaluate_target_round(
         "actual_gap_sum": actual_gap_sum,
         "actual_group_pattern": _actual_group_pattern(actual_numbers),
         "actual_gap_pattern": _actual_gap_pattern(actual_numbers, gap_map),
+        "actual_skip_pattern": _actual_gap_pattern(actual_numbers, gap_map),
         "candidate_11_hits": len(
             actual & set(candidates[11])
         ),
