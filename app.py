@@ -15,6 +15,9 @@ from lotto64.analysis.skip_pattern import (
     build_empirical_hazard,
     build_skip_period_history,
     current_skip_profile,
+    forecast_next_skip_pattern,
+    skip_period_distribution,
+    skip_sum_distribution,
 )
 from lotto64.backtest.walk_forward import summarize, walk_forward
 from lotto64.backtest.seed_stability import (
@@ -57,9 +60,9 @@ except ImportError:
         "1~9", "10~19", "20~29", "30~39", "40~45"
     )
 
-st.set_page_config(page_title="Lotto64 v4.5.3 Historical Validation Ledger", page_icon="🍀", layout="wide")
+st.set_page_config(page_title="Lotto64 v4.5.4 Skip Transition", page_icon="🍀", layout="wide")
 st.title("🍀 Lotto64 Ultimate AI v4.5 · Historical Validation Ledger")
-st.caption("데이터 · 합계 시계열 · GAP · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
+st.caption("데이터 · 합계 시계열 · GAP · 건너띔 합계/전이 · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
 with st.sidebar:
@@ -232,6 +235,11 @@ with tabs[3]:
     skip_history = build_skip_period_history(analysis)
     skip_profile = current_skip_profile(analysis)
     hazard = build_empirical_hazard(analysis)
+    skip_forecast = forecast_next_skip_pattern(
+        analysis,
+        state_window=50,
+        transition_lookback=min(120, max(30, len(analysis) - 1)),
+    )
 
     latest_skip = skip_history.iloc[-1] if not skip_history.empty else None
     if latest_skip is not None:
@@ -241,9 +249,39 @@ with tabs[3]:
         m3.metric("최근 회차 최대", f"{latest_skip['skip_max']:.0f}")
         m4.metric("현재 패턴", latest_skip["skip_regime"])
 
+        f1, f2, f3, f4 = st.columns(4)
+        f1.metric("다음 합계 중심", f"{skip_forecast.target_center:.0f}")
+        f2.metric(
+            "다음 핵심 구간",
+            f"{skip_forecast.target_low:.0f}~{skip_forecast.target_high:.0f}",
+        )
+        f3.metric(
+            "다음 확장 구간",
+            f"{skip_forecast.wide_low:.0f}~{skip_forecast.wide_high:.0f}",
+        )
+        f4.metric("전이 일치 표본", f"{skip_forecast.matched_transitions}회")
+        st.caption(
+            "전이 기준: "
+            f"{skip_forecast.match_mode} · 현재 상태/방향 "
+            f"{skip_forecast.current_state}/{skip_forecast.current_direction} · "
+            "일치 표본 부족 시 동일 상태→최근 전이 순으로 자동 후퇴"
+        )
+
+    st.markdown("#### 건너띔 기간·합계 구간 분포")
+    d1, d2 = st.columns(2)
+    with d1:
+        st.caption("건너띔 기간별 실제 출현 횟수 (최근 분석 회차)")
+        period_dist = skip_period_distribution(analysis)
+        if not period_dist.empty:
+            st.bar_chart(period_dist.set_index("skip")["count"])
+    with d2:
+        st.caption("회차별 건너띔 합계 구간 분포 (최근 100회)")
+        sum_dist = skip_sum_distribution(analysis, window=100)
+        st.bar_chart(sum_dist.set_index("skip_sum_band")["count"])
+
     st.markdown("#### 건너띔 합계 시계열")
     chart = skip_history.tail(min(100, len(skip_history))).set_index("round")[
-        ["skip_sum", "skip_sum_ma5", "skip_sum_ma10"]
+        ["skip_sum", "skip_sum_ma5", "skip_sum_ma10", "skip_sum_ma20"]
     ]
     st.line_chart(chart)
 
@@ -251,11 +289,13 @@ with tabs[3]:
     st.dataframe(
         skip_history.tail(60)[
             [
-                "round", "date", "actual_numbers", "skip_values",
+                "round", "date", "actual_numbers",
+                "skip_n1", "skip_n2", "skip_n3", "skip_n4", "skip_n5", "skip_n6",
                 "skip_sum", "skip_mean", "skip_median", "skip_max",
                 "skip_0_count", "skip_1_2_count", "skip_3_5_count",
                 "skip_6_10_count", "skip_11_16_count", "skip_17plus_count",
-                "skip_sum_delta1", "skip_regime", "skip_pattern",
+                "skip_sum_delta1", "skip_sum_band", "skip_regime",
+                "skip_direction", "skip_pattern_state", "skip_pattern",
             ]
         ],
         use_container_width=True,
@@ -350,7 +390,7 @@ with tabs[7]:
 
     final_context = final_bundle["context"]
     sum_fc = final_context["sum_forecast"]
-    gap_fc = final_context["gap_sum_forecast"]
+    skip_fc = final_context["skip_pattern_forecast"]
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric(
@@ -359,10 +399,10 @@ with tabs[7]:
     )
     m2.metric("번호합 중심", f"{sum_fc['target_center']:.0f}")
     m3.metric(
-        "GAP합 핵심구간",
-        f"{gap_fc['target_low']:.0f}~{gap_fc['target_high']:.0f}",
+        "건너띔 합계 핵심구간",
+        f"{skip_fc['target_low']:.0f}~{skip_fc['target_high']:.0f}",
     )
-    m4.metric("GAP합 중심", f"{gap_fc['target_center']:.0f}")
+    m4.metric("건너띔 합계 중심", f"{skip_fc['target_center']:.0f}")
 
     size_tabs = st.tabs(["BEST 5", "BEST 10", "BEST 15", "BEST 20"])
 
@@ -398,6 +438,7 @@ with tabs[7]:
     st.markdown("#### 최종 점수에 반영되는 주요 구조")
     st.write(
         "Pattern Master 번호점수 + 번호합 시계열 + GAP합 시계열 + "
+        "건너띔 합계 상태·방향 전이 + 건너띔 구간 구성·hazard + "
         "GAP구간 구성 + 홀짝/저고 + 번호구간 + 끝수 + AC + "
         "이월수 + 조합 간 중복/번호 노출 분산을 함께 반영합니다."
     )
@@ -729,7 +770,7 @@ with tabs[11]:
     st.dataframe(explain_number(row), use_container_width=True)
 
 st.divider()
-st.caption("Lotto64 Ultimate AI v4.5.3 · Historical Validation Ledger · 엄격 200회 Rolling Walk-forward")
+st.caption("Lotto64 Ultimate AI v4.5.4 · Skip Sum Transition · 엄격 200회 Rolling Walk-forward")
 
 
 
@@ -755,7 +796,7 @@ with tabs[12]:
     c3.code(", ".join(map(str, final_candidates[15])))
 
     sum_fc = final_context["sum_forecast"]
-    gap_fc = final_context["gap_sum_forecast"]
+    skip_fc = final_context["skip_pattern_forecast"]
 
     s1, s2, s3, s4 = st.columns(4)
     s1.metric("최근 번호합", f"{sum_fc['current_sum']:.0f}")
@@ -763,10 +804,10 @@ with tabs[12]:
         "다음 번호합 핵심구간",
         f"{sum_fc['target_low']:.0f}~{sum_fc['target_high']:.0f}",
     )
-    s3.metric("최근 GAP합", f"{gap_fc['current_gap_sum']:.0f}")
+    s3.metric("최근 건너띔 합", f"{skip_fc['current_skip_sum']:.0f}")
     s4.metric(
-        "다음 GAP합 핵심구간",
-        f"{gap_fc['target_low']:.0f}~{gap_fc['target_high']:.0f}",
+        "다음 건너띔 합계 핵심구간",
+        f"{skip_fc['target_low']:.0f}~{skip_fc['target_high']:.0f}",
     )
 
     if not final_portfolio.empty:
@@ -901,6 +942,11 @@ with tabs[13]:
             "GAP합 핵심 적중률",
             f"{summary['gap_sum_core_rate']:.1%}",
         )
+        if "skip_sum_core_rate" in summary:
+            st.metric(
+                "건너띔 합계 핵심 적중률",
+                f"{summary['skip_sum_core_rate']:.1%}",
+            )
 
         s1, s2, s3, s4 = st.columns(4)
         s1.metric(
@@ -919,6 +965,11 @@ with tabs[13]:
             "GAP합 MAE",
             f"{summary['gap_sum_mae']:.2f}",
         )
+        if "skip_sum_mae" in summary:
+            st.metric(
+                "건너띔 합계 MAE",
+                f"{summary['skip_sum_mae']:.2f}",
+            )
 
         st.markdown("#### 이전 50회 vs 최근 50회")
         comparison = compare_previous_recent(
@@ -950,15 +1001,16 @@ with tabs[13]:
         st.markdown("#### 누적 검증 추세")
         cumulative = cumulative_metrics(ledger)
         if not cumulative.empty:
+            trend_columns = [
+                "candidate_15_mean",
+                "best20_mean",
+                "sum_core_rate",
+                "gap_sum_core_rate",
+            ]
+            if "skip_sum_core_rate" in cumulative.columns:
+                trend_columns.append("skip_sum_core_rate")
             st.line_chart(
-                cumulative.set_index("round")[
-                    [
-                        "candidate_15_mean",
-                        "best20_mean",
-                        "sum_core_rate",
-                        "gap_sum_core_rate",
-                    ]
-                ]
+                cumulative.set_index("round")[trend_columns]
             )
 
         st.markdown("#### 회차별 검증 원장")
@@ -979,6 +1031,11 @@ with tabs[13]:
             "actual_gap_sum",
             "predicted_gap_sum_center",
             "gap_sum_core_hit",
+            "actual_skip_sum",
+            "predicted_skip_sum_center",
+            "skip_sum_core_hit",
+            "skip_transition_match_mode",
+            "skip_transition_matches",
             "master_top20_hits",
             "primary_failure",
             "failure_reasons",

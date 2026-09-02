@@ -1,10 +1,15 @@
 import pandas as pd
+import pytest
 
 from lotto64.analysis.skip_pattern import (
     build_empirical_hazard,
     build_skip_period_history,
     current_skip_profile,
+    forecast_next_skip_pattern,
     skip_bucket,
+    skip_period_distribution,
+    skip_sum_distribution,
+    skip_sum_pattern_score,
 )
 
 
@@ -51,3 +56,30 @@ def test_current_skip_profile_and_hazard_exist():
     hazard = build_empirical_hazard(df)
     assert len(hazard) == 45
     assert ((hazard["empirical_hazard"] >= 0) & (hazard["empirical_hazard"] <= 1)).all()
+
+
+def test_window_keeps_full_previous_hit_history():
+    full = build_skip_period_history(_df())
+    recent = build_skip_period_history(_df(), window=2)
+    assert recent["round"].tolist() == [5, 6]
+    assert recent.iloc[-1]["skip_values"] == full.iloc[-1]["skip_values"]
+
+
+def test_skip_period_and_sum_distributions():
+    period = skip_period_distribution(_df())
+    assert int(period["count"].sum()) == 4
+    assert period["rate"].sum() == pytest.approx(1.0)
+
+    sums = skip_sum_distribution(_df(), window=100)
+    assert int(sums["count"].sum()) == 3
+    assert sums["rate"].sum() == pytest.approx(1.0)
+
+
+def test_skip_transition_forecast_and_score():
+    forecast = forecast_next_skip_pattern(_df(), min_matches=2)
+    assert forecast.wide_low <= forecast.target_low
+    assert forecast.target_low <= forecast.target_center
+    assert forecast.target_center <= forecast.target_high
+    assert forecast.target_high <= forecast.wide_high
+    assert 0.0 < sum(forecast.bucket_target.values()) <= 6.0
+    assert 0.0 <= skip_sum_pattern_score(3, forecast) <= 1.0

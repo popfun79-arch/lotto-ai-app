@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from lotto64.analysis.gap_sum_series import (
     build_gap_sum_series,
@@ -76,3 +77,12 @@ def test_final_bundle_shapes():
     assert set(bundle["candidate_sets"]) == {11, 13, 15}
     assert "sum_forecast" in bundle["context"]
     assert "gap_sum_forecast" in bundle["context"]
+    assert "skip_pattern_forecast" in bundle["context"]
+    assert sum(bundle["context"]["final_score_weights"].values()) == pytest.approx(1.0)
+    assert bundle["context"]["final_score_weights"]["skip_sum_transition"] == 0.14
+    assert "skip_sum" in bundle["ranked"].columns
+    assert "skip_sum_pattern_score" in bundle["ranked"].columns
+    assert (
+        bundle["ranked"]["gap_sum"]
+        == bundle["ranked"]["skip_sum"] + 6
+    ).all()

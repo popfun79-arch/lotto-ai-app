@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from lotto64.analysis.gap import current_gap_table, row_numbers
+from lotto64.analysis.skip_pattern import skip_bucket
 from lotto64.models.pattern_master import gap_bucket
 from lotto64.recommend.final_pattern import final_recommendation_bundle
 
@@ -110,9 +111,21 @@ def _actual_group_pattern(numbers: list[int]) -> str:
 
 def _actual_gap_pattern(
     numbers: list[int],
-    gap_map: dict[int, int],
+    skip_map: dict[int, int],
 ) -> str:
-    counts = Counter(gap_bucket(gap_map[number]) for number in numbers)
+    counts = Counter(
+        gap_bucket(skip_map[number] + 1)
+        for number in numbers
+    )
+    keys = ["0", "1-2", "3-5", "6-10", "11-16", "17+"]
+    return " / ".join(f"{key}:{counts[key]}" for key in keys)
+
+
+def _actual_skip_pattern(
+    numbers: list[int],
+    skip_map: dict[int, int],
+) -> str:
+    counts = Counter(skip_bucket(skip_map[number]) for number in numbers)
     keys = ["0", "1-2", "3-5", "6-10", "11-16", "17+"]
     return " / ".join(f"{key}:{counts[key]}" for key in keys)
 
@@ -133,6 +146,9 @@ def classify_failure(record: dict) -> tuple[str, str]:
 
     if not int(record["gap_sum_core_hit"]):
         reasons.append("GAP합 핵심구간 이탈")
+
+    if not int(record.get("skip_sum_core_hit", 1)):
+        reasons.append("건너띔 합계 핵심구간 이탈")
 
     if (
         int(record["candidate_15_hits"]) >= 3
@@ -186,8 +202,9 @@ def evaluate_target_round(
             gap_table["current_gap"].astype(int),
         )
     )
-    actual_gap_values = [gap_map[number] for number in actual_numbers]
-    actual_gap_sum = int(sum(actual_gap_values))
+    actual_skip_values = [gap_map[number] for number in actual_numbers]
+    actual_skip_sum = int(sum(actual_skip_values))
+    actual_gap_sum = actual_skip_sum + len(actual_numbers)
     actual_sum = int(sum(actual_numbers))
 
     master_rank = dict(
@@ -201,6 +218,7 @@ def evaluate_target_round(
 
     sum_fc = context["sum_forecast"]
     gap_fc = context["gap_sum_forecast"]
+    skip_fc = context["skip_pattern_forecast"]
 
     record = {
         "round": target_round,
@@ -212,9 +230,10 @@ def evaluate_target_round(
         "actual_bonus": int(actual_row["bonus"]),
         "actual_sum": actual_sum,
         "actual_gap_sum": actual_gap_sum,
+        "actual_skip_sum": actual_skip_sum,
         "actual_group_pattern": _actual_group_pattern(actual_numbers),
         "actual_gap_pattern": _actual_gap_pattern(actual_numbers, gap_map),
-        "actual_skip_pattern": _actual_gap_pattern(actual_numbers, gap_map),
+        "actual_skip_pattern": _actual_skip_pattern(actual_numbers, gap_map),
         "candidate_11_hits": len(
             actual & set(candidates[11])
         ),
@@ -264,6 +283,26 @@ def evaluate_target_round(
             <= actual_gap_sum
             <= float(gap_fc["wide_high"])
         ),
+        "predicted_skip_sum_center": float(skip_fc["target_center"]),
+        "predicted_skip_sum_low": float(skip_fc["target_low"]),
+        "predicted_skip_sum_high": float(skip_fc["target_high"]),
+        "predicted_skip_sum_wide_low": float(skip_fc["wide_low"]),
+        "predicted_skip_sum_wide_high": float(skip_fc["wide_high"]),
+        "skip_sum_abs_error": float(
+            abs(actual_skip_sum - float(skip_fc["target_center"]))
+        ),
+        "skip_sum_core_hit": int(
+            float(skip_fc["target_low"])
+            <= actual_skip_sum
+            <= float(skip_fc["target_high"])
+        ),
+        "skip_sum_wide_hit": int(
+            float(skip_fc["wide_low"])
+            <= actual_skip_sum
+            <= float(skip_fc["wide_high"])
+        ),
+        "skip_transition_match_mode": str(skip_fc["match_mode"]),
+        "skip_transition_matches": int(skip_fc["matched_transitions"]),
         "master_top20_hits": int(master_top20_hits),
         "master_actual_mean_rank": float(np.mean(actual_master_ranks)),
         "master_actual_best_rank": int(min(actual_master_ranks)),
@@ -335,7 +374,7 @@ def summarize_ledger(ledger: pd.DataFrame) -> dict:
     if ledger is None or ledger.empty:
         return {}
 
-    return {
+    summary = {
         "rounds": int(len(ledger)),
         "start_round": int(ledger["round"].min()),
         "end_round": int(ledger["round"].max()),
@@ -362,6 +401,13 @@ def summarize_ledger(ledger: pd.DataFrame) -> dict:
             ledger["master_top20_hits"].mean()
         ),
     }
+    if "skip_sum_core_hit" in ledger.columns:
+        summary.update({
+            "skip_sum_core_rate": float(ledger["skip_sum_core_hit"].mean()),
+            "skip_sum_wide_rate": float(ledger["skip_sum_wide_hit"].mean()),
+            "skip_sum_mae": float(ledger["skip_sum_abs_error"].mean()),
+        })
+    return summary
 
 
 def compare_previous_recent(
@@ -401,6 +447,11 @@ def compare_previous_recent(
         ("GAP합 MAE", "gap_sum_abs_error", "mean"),
         ("Pattern Master TOP20 평균 포착", "master_top20_hits", "mean"),
     ]
+    if "skip_sum_core_hit" in ledger.columns:
+        metrics.extend([
+            ("건너띔 합계 핵심구간 적중률", "skip_sum_core_hit", "mean"),
+            ("건너띔 합계 MAE", "skip_sum_abs_error", "mean"),
+        ])
 
     def calculate(frame: pd.DataFrame, column: str, mode: str) -> float:
         if mode == "3plus":
@@ -443,14 +494,18 @@ def cumulative_metrics(ledger: pd.DataFrame) -> pd.DataFrame:
     if ledger is None or ledger.empty:
         return pd.DataFrame()
 
-    out = pd.DataFrame({
+    values = {
         "round": ledger["round"].astype(int),
         "candidate_15_mean": ledger["candidate_15_hits"].expanding().mean(),
         "best20_mean": ledger["best20_max_hit"].expanding().mean(),
         "sum_core_rate": ledger["sum_core_hit"].expanding().mean(),
         "gap_sum_core_rate": ledger["gap_sum_core_hit"].expanding().mean(),
-    })
-    return out
+    }
+    if "skip_sum_core_hit" in ledger.columns:
+        values["skip_sum_core_rate"] = (
+            ledger["skip_sum_core_hit"].expanding().mean()
+        )
+    return pd.DataFrame(values)
 
 
 def save_ledger(

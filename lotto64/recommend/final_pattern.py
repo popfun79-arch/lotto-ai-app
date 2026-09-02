@@ -16,8 +16,9 @@ from lotto64.analysis.skip_pattern import (
     SKIP_BUCKETS,
     build_empirical_hazard,
     current_skip_profile,
+    forecast_next_skip_pattern,
     skip_bucket,
-    skip_composition_target,
+    skip_sum_pattern_score,
 )
 from lotto64.models.pattern_master import (
     candidate_sets,
@@ -100,19 +101,19 @@ def _bucket_composition_score(
 
 def _candidate_pattern_ok(
     combo: tuple[int, ...],
-    gap_map: dict[int, int],
+    skip_map: dict[int, int],
     sum_low: float,
     sum_high: float,
-    gap_low: float,
-    gap_high: float,
+    skip_low: float,
+    skip_high: float,
 ) -> bool:
     total = sum(combo)
-    gap_total = sum(gap_map[n] for n in combo)
-    buckets = Counter(gap_bucket(gap_map[n]) for n in combo)
+    skip_total = sum(skip_map[n] for n in combo)
+    buckets = Counter(skip_bucket(skip_map[n]) for n in combo)
 
     return (
         sum_low <= total <= sum_high
-        and gap_low <= gap_total <= gap_high
+        and skip_low <= skip_total <= skip_high
         and max_consecutive_run(combo) < 4
         and odd_count(combo) not in (0, 6)
         and low_count(combo) not in (0, 6)
@@ -160,10 +161,17 @@ def rank_final_combinations(
     target_buckets = _gap_bucket_means(df, 50)
     feature_dist = _feature_distributions(df, 50)
 
-    # v4.5.3: 건너띔 기간은 GAP합과 별도 축으로 계산하되,
-    # 회차별 skip-age 구성과 번호별 empirical hazard를 한 번만 산출합니다.
+    # v4.5.4: skip=0 기준 합계와 회차 상태 전이를 GAP합과 분리합니다.
+    # 현재 후보 번호의 skip 합계는 다음 회차 당첨 시의 실제 skip 합계와
+    # 같은 기준이므로 전용 예측구간으로 직접 평가합니다.
     skip_profile = current_skip_profile(df).set_index("number")
-    skip_target = skip_composition_target(df, window=50)
+    skip_map = skip_profile["current_skip"].astype(int).to_dict()
+    skip_forecast = forecast_next_skip_pattern(
+        df,
+        state_window=50,
+        transition_lookback=min(120, max(30, len(df) - 1)),
+    )
+    skip_target = skip_forecast.bucket_target
     skip_hazard = build_empirical_hazard(df).set_index("number")
     skip_hazard["hazard_rank_score"] = skip_hazard["empirical_hazard"].rank(pct=True)
 
@@ -176,15 +184,18 @@ def rank_final_combinations(
     for combo in combinations(pool, 6):
         combo = tuple(sorted(combo))
         total = sum(combo)
-        gap_total = sum(gap_map[n] for n in combo)
+        skip_total = sum(skip_map[n] for n in combo)
+        # build_gap_tables의 GAP은 연속 재출현을 1로 계산합니다.
+        # skip=0 기준 후보 합계와 비교할 때는 6개 번호 각각에 1을 더합니다.
+        legacy_gap_total = skip_total + len(combo)
 
         if not _candidate_pattern_ok(
             combo,
-            gap_map,
+            skip_map,
             sum_forecast.target_low,
             sum_forecast.target_high,
-            gap_forecast.target_low,
-            gap_forecast.target_high + 2,
+            max(0.0, skip_forecast.wide_low - 3.0),
+            skip_forecast.wide_high + 3.0,
         ):
             continue
 
@@ -193,9 +204,10 @@ def rank_final_combinations(
             for n in combo
         ]))
         draw_sum_score = sum_pattern_score(total, sum_forecast)
-        gap_total_score = gap_sum_pattern_score(gap_total, gap_forecast)
+        gap_total_score = gap_sum_pattern_score(legacy_gap_total, gap_forecast)
+        skip_total_score = skip_sum_pattern_score(skip_total, skip_forecast)
         skip_counts = Counter(
-            skip_bucket(int(skip_profile.loc[n, "current_skip"]))
+            skip_bucket(skip_map[n])
             for n in combo
         )
         skip_distance = sum(
@@ -236,20 +248,21 @@ def rank_final_combinations(
         else:
             carry_score = 0.35
 
-        # v4.5.3: 회차별 건너띔 기간 패턴을 별도 축으로 반영합니다.
-        # 기존 GAP합과 중복되는 영향을 줄이기 위해 총 가중치는 유지합니다.
+        # v4.5.4: 전용 skip 합계/회차 전이/구간 구성을 29% 반영합니다.
+        # 기존 GAP합 가중치는 줄여 같은 정보를 이중으로 세지 않도록 합니다.
         final_score = (
-            0.30 * number_score
-            + 0.19 * draw_sum_score
-            + 0.17 * gap_total_score
-            + 0.08 * bucket_score
-            + 0.06 * skip_period_score
-            + 0.04 * skip_hazard_score_value
-            + 0.06 * balance_score
-            + 0.04 * zone_score
-            + 0.025 * last_score
-            + 0.025 * ac_score
-            + 0.04 * carry_score
+            0.25 * number_score
+            + 0.17 * draw_sum_score
+            + 0.08 * gap_total_score
+            + 0.06 * bucket_score
+            + 0.14 * skip_total_score
+            + 0.10 * skip_period_score
+            + 0.05 * skip_hazard_score_value
+            + 0.05 * balance_score
+            + 0.03 * zone_score
+            + 0.02 * last_score
+            + 0.02 * ac_score
+            + 0.03 * carry_score
         )
 
         bucket_counts = Counter(gap_bucket(gap_map[n]) for n in combo)
@@ -260,9 +273,11 @@ def rank_final_combinations(
             "number_score": number_score,
             "sum": total,
             "sum_pattern_score": draw_sum_score,
-            "gap_sum": gap_total,
+            "gap_sum": legacy_gap_total,
             "gap_sum_pattern_score": gap_total_score,
             "gap_bucket_score": bucket_score,
+            "skip_sum": skip_total,
+            "skip_sum_pattern_score": skip_total_score,
             "skip_period_pattern_score": skip_period_score,
             "skip_empirical_hazard_score": skip_hazard_score_value,
             "odd_count": odd,
@@ -274,6 +289,10 @@ def rank_final_combinations(
             "gap_pattern": "/".join(
                 f"{bucket}:{bucket_counts[bucket]}"
                 for bucket in BUCKETS
+            ),
+            "skip_pattern": "/".join(
+                f"{bucket}:{skip_counts[bucket]}"
+                for bucket in SKIP_BUCKETS
             ),
         })
 
@@ -288,10 +307,28 @@ def rank_final_combinations(
         "candidate_sets": candidate_sets(master),
         "sum_forecast": sum_forecast.to_dict(),
         "gap_sum_forecast": gap_forecast.to_dict(),
+        "skip_pattern_forecast": skip_forecast.to_dict(),
         "pool": sorted(pool),
         "gap_bucket_target_mean": target_buckets,
+        "final_score_weights": {
+            "number": 0.25,
+            "number_sum": 0.17,
+            "legacy_gap_sum": 0.08,
+            "gap_bucket": 0.06,
+            "skip_sum_transition": 0.14,
+            "skip_bucket_transition": 0.10,
+            "skip_empirical_hazard": 0.05,
+            "balance": 0.05,
+            "zone": 0.03,
+            "last_digit": 0.02,
+            "ac": 0.02,
+            "carry": 0.03,
+        },
         "skip_period_enabled": True,
-        "skip_period_note": "회차별 당첨번호의 직전 적중 이후 건너띔 기간 + empirical hazard를 최종 점수에 반영",
+        "skip_period_note": (
+            "skip=0 기준 합계 상태·방향 전이 + 구간별 6개 구성 + "
+            "empirical hazard를 최종 점수에 반영"
+        ),
     }
     return ranked, master, context
 
