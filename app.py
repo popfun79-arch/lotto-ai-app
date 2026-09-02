@@ -11,6 +11,11 @@ from lotto64.analysis.gap import current_gap_table, gap_distribution
 from lotto64.analysis.similarity import similar_rounds
 from lotto64.analysis.state import cec_drc_backtest
 from lotto64.analysis.sum_series import build_sum_series, compare_sum_windows, forecast_next_sum
+from lotto64.analysis.skip_pattern import (
+    build_empirical_hazard,
+    build_skip_period_history,
+    current_skip_profile,
+)
 from lotto64.backtest.walk_forward import summarize, walk_forward
 from lotto64.backtest.seed_stability import (
     ga_seed_stability,
@@ -52,8 +57,8 @@ except ImportError:
         "1~9", "10~19", "20~29", "30~39", "40~45"
     )
 
-st.set_page_config(page_title="Lotto64 v4.5 Historical Validation Ledger", page_icon="🍀", layout="wide")
-st.title("🍀 Lotto64 Ultimate AI v4.5.2 · Historical Validation Ledger")
+st.set_page_config(page_title="Lotto64 v4.5.3 Historical Validation Ledger", page_icon="🍀", layout="wide")
+st.title("🍀 Lotto64 Ultimate AI v4.5 · Historical Validation Ledger")
 st.caption("데이터 · 합계 시계열 · GAP · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
@@ -131,7 +136,7 @@ with st.spinner("통합 Final Pattern 엔진 계산 중..."):
 top_of_best_sets = build_top_of_best_sets(final_bundle["portfolio"])
 
 tabs = st.tabs([
-    "데이터 진단", "합계 시계열", "GAP·EGR", "CEC·DRC", "회차 DNA",
+    "데이터 진단", "합계 시계열", "GAP·EGR", "건너띔 패턴", "CEC·DRC", "회차 DNA",
     "후보 번호", "Top of the Best", "GA 최적화", "Walk-forward", "가중치 탐색",
     "설명", "Final Pattern", "검증 원장",
 ])
@@ -217,6 +222,71 @@ with tabs[2]:
         st.dataframe(egr, use_container_width=True)
 
 with tabs[3]:
+    st.subheader("회차별 건너띔 기간 패턴")
+    st.caption(
+        "각 회차의 실제 당첨번호 6개가 직전 출현 이후 몇 회차를 건너뛰었는지 계산합니다. "
+        "skip=0은 직전 회차 재출현, skip=1은 한 회차 건너뜀입니다. "
+        "미래 회차 정보는 사용하지 않습니다."
+    )
+
+    skip_history = build_skip_period_history(analysis)
+    skip_profile = current_skip_profile(analysis)
+    hazard = build_empirical_hazard(analysis)
+
+    latest_skip = skip_history.iloc[-1] if not skip_history.empty else None
+    if latest_skip is not None:
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("최근 회차 건너띔 합", f"{latest_skip['skip_sum']:.0f}")
+        m2.metric("최근 회차 평균", f"{latest_skip['skip_mean']:.1f}")
+        m3.metric("최근 회차 최대", f"{latest_skip['skip_max']:.0f}")
+        m4.metric("현재 패턴", latest_skip["skip_regime"])
+
+    st.markdown("#### 건너띔 합계 시계열")
+    chart = skip_history.tail(min(100, len(skip_history))).set_index("round")[
+        ["skip_sum", "skip_sum_ma5", "skip_sum_ma10"]
+    ]
+    st.line_chart(chart)
+
+    st.markdown("#### 회차별 건너띔 구성")
+    st.dataframe(
+        skip_history.tail(60)[
+            [
+                "round", "date", "actual_numbers", "skip_values",
+                "skip_sum", "skip_mean", "skip_median", "skip_max",
+                "skip_0_count", "skip_1_2_count", "skip_3_5_count",
+                "skip_6_10_count", "skip_11_16_count", "skip_17plus_count",
+                "skip_sum_delta1", "skip_regime", "skip_pattern",
+            ]
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("#### 현재 번호별 건너띔 기간")
+    st.dataframe(
+        skip_profile.sort_values(
+            ["current_skip", "number"],
+            ascending=[False, True],
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("#### 번호별 empirical hazard")
+    st.caption(
+        "현재 skip 기간에서 다음 회차에 다시 출현한 과거 빈도를 조건부로 계산한 지표입니다. "
+        "예측 보장이 아닌 과거 데이터의 조건부 빈도입니다."
+    )
+    st.dataframe(
+        hazard.sort_values(
+            ["empirical_hazard", "number"],
+            ascending=[False, True],
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+with tabs[4]:
     dna = build_dna(analysis)
     transitions = cec_drc_backtest(dna)
     cec = transitions[transitions["cec_event"]]
@@ -232,7 +302,7 @@ with tabs[3]:
     st.line_chart(states.set_index("round")[["gap_sum", "gap_sum_ma5", "gap_sum_ma10"]])
     st.dataframe(states.tail(60), use_container_width=True)
 
-with tabs[4]:
+with tabs[5]:
     dna = build_dna(analysis)
     st.dataframe(dna.tail(30), use_container_width=True)
     sim = similar_rounds(dna, similarity_k)
@@ -241,7 +311,7 @@ with tabs[4]:
     else:
         st.dataframe(sim, use_container_width=True)
 
-with tabs[5]:
+with tabs[6]:
     scores = number_scores(
         analysis,
         egr_threshold=egr_threshold,
@@ -259,7 +329,7 @@ with tabs[5]:
     st.dataframe(scores, use_container_width=True)
     st.download_button("번호 점수 다운로드", csv_bytes(scores), "number_scores.csv")
 
-with tabs[6]:
+with tabs[7]:
     st.subheader("🏆 Top of the Best")
     st.caption(
         "기존 안정형·균형형·공격형 3종 TOP20(최대 60개)을 사용하지 않습니다. "
@@ -332,7 +402,7 @@ with tabs[6]:
         "이월수 + 조합 간 중복/번호 노출 분산을 함께 반영합니다."
     )
 
-with tabs[7]:
+with tabs[8]:
     st.subheader("유전자 알고리즘 조합 최적화")
     st.caption(
         f"고정 기준 Seed = {FIXED_SEED}. 같은 데이터/설정이면 같은 "
@@ -469,7 +539,7 @@ with tabs[7]:
                 "number_seed_stability.csv",
             )
 
-with tabs[8]:
+with tabs[9]:
     st.subheader("Walk-forward 백테스트")
     st.caption(
         f"기본 백테스트는 고정 Seed {FIXED_SEED}를 사용해 재현성을 유지합니다."
@@ -616,7 +686,7 @@ with tabs[8]:
                 "walk_forward_multi_seed.csv",
             )
 
-with tabs[9]:
+with tabs[10]:
     st.subheader("가중치 확률적 탐색")
     trials = st.slider("탐색 횟수", 3, 20, 6)
 
@@ -649,7 +719,7 @@ with tabs[9]:
             "application/json",
         )
 
-with tabs[10]:
+with tabs[11]:
     st.subheader("번호 점수 설명")
     scores = number_scores(analysis, egr_threshold=egr_threshold, similarity_k=similarity_k)
     selected_number = st.selectbox("번호 선택", scores["number"].astype(int).tolist())
@@ -659,11 +729,11 @@ with tabs[10]:
     st.dataframe(explain_number(row), use_container_width=True)
 
 st.divider()
-st.caption("Lotto64 Ultimate AI v4.5 · Historical Validation Ledger · 엄격 200회 Rolling Walk-forward")
+st.caption("Lotto64 Ultimate AI v4.5.3 · Historical Validation Ledger · 엄격 200회 Rolling Walk-forward")
 
 
 
-with tabs[11]:
+with tabs[12]:
     st.subheader("Final Pattern — Python + Games-Out/Skip + 합계 시계열")
     st.caption(
         "Drawings Since Hit·Skip/Hit·Skips Due·Number Groups·Last Digits·"
@@ -715,7 +785,7 @@ with tabs[11]:
             )
 
 
-with tabs[12]:
+with tabs[13]:
     st.subheader("📒 Historical Validation Ledger")
     st.caption(
         "각 검증 회차의 실제 결과를 절대 학습에 포함하지 않고, "
