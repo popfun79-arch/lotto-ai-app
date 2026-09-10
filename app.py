@@ -282,11 +282,17 @@ with tabs[3]:
             "일치 표본 부족 시 동일 상태→최근 전이 순으로 자동 후퇴"
         )
 
+        # 기본 버킷 컬럼(skip_0_count 등)에서 안전하게 직접 합산 (캐시나 배포 상태와 무관하게 100% 정상 작동)
+        c_0_5 = int(latest_skip.get("skip_0_count", 0)) + int(latest_skip.get("skip_1_2_count", 0)) + int(latest_skip.get("skip_3_5_count", 0))
+        c_6_10 = int(latest_skip.get("skip_6_10_count", 0))
+        c_11_plus = int(latest_skip.get("skip_11_16_count", 0)) + int(latest_skip.get("skip_17plus_count", 0))
+        c_0_10 = c_0_5 + c_6_10
+
         s1, s2, s3, s4 = st.columns(4)
-        s1.metric("최근 5회 이내(0~5회)", f"{latest_skip.get('skip_recent_0_5_count', 0)}개", help="통계적 권장: 3~4개 (평균 3.41개)")
-        s2.metric("중기(6~10회)", f"{latest_skip.get('skip_mid_6_10_count', 0)}개", help="통계적 권장: 1~2개 (평균 1.43개)")
-        s3.metric("장기 미출현(11회+)", f"{latest_skip.get('skip_long_11plus_count', 0)}개", help="통계적 권장: 0~1개 (최대 2개 이하)")
-        s4.metric("최근 10회 통합(0~10회)", f"{latest_skip.get('skip_recent_0_10_count', 0)}개", help="통계적 점유율 약 80.6% (평균 4.83개)")
+        s1.metric("최근 5회 이내(0~5회)", f"{c_0_5}개", help="통계적 권장: 3~4개 (평균 3.41개)")
+        s2.metric("중기(6~10회)", f"{c_6_10}개", help="통계적 권장: 1~2개 (평균 1.43개)")
+        s3.metric("장기 미출현(11회+)", f"{c_11_plus}개", help="통계적 권장: 0~1개 (최대 2개 이하)")
+        s4.metric("최근 10회 통합(0~10회)", f"{c_0_10}개", help="통계적 점유율 약 80.6% (평균 4.83개)")
 
     st.markdown("#### 건너띔 기간·합계 구간 분포")
     d1, d2 = st.columns(2)
