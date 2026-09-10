@@ -166,6 +166,10 @@ def build_skip_period_history(df: pd.DataFrame, window: int | None = None) -> pd
             "skip_6_10_count": bucket_counts["6-10"],
             "skip_11_16_count": bucket_counts["11-16"],
             "skip_17plus_count": bucket_counts["17+"],
+            "skip_recent_0_5_count": bucket_counts["0"] + bucket_counts["1-2"] + bucket_counts["3-5"],
+            "skip_mid_6_10_count": bucket_counts["6-10"],
+            "skip_long_11plus_count": bucket_counts["11-16"] + bucket_counts["17+"],
+            "skip_recent_0_10_count": bucket_counts["0"] + bucket_counts["1-2"] + bucket_counts["3-5"] + bucket_counts["6-10"],
         }
         record.update({f"skip_n{i}": skips[i - 1] for i in range(1, 7)})
         rows.append(record)

@@ -282,6 +282,12 @@ with tabs[3]:
             "일치 표본 부족 시 동일 상태→최근 전이 순으로 자동 후퇴"
         )
 
+        s1, s2, s3, s4 = st.columns(4)
+        s1.metric("최근 5회 이내(0~5회)", f"{latest_skip.get('skip_recent_0_5_count', 0)}개", help="통계적 권장: 3~4개 (평균 3.41개)")
+        s2.metric("중기(6~10회)", f"{latest_skip.get('skip_mid_6_10_count', 0)}개", help="통계적 권장: 1~2개 (평균 1.43개)")
+        s3.metric("장기 미출현(11회+)", f"{latest_skip.get('skip_long_11plus_count', 0)}개", help="통계적 권장: 0~1개 (최대 2개 이하)")
+        s4.metric("최근 10회 통합(0~10회)", f"{latest_skip.get('skip_recent_0_10_count', 0)}개", help="통계적 점유율 약 80.6% (평균 4.83개)")
+
     st.markdown("#### 건너띔 기간·합계 구간 분포")
     d1, d2 = st.columns(2)
     with d1:

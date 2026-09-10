@@ -32,3 +32,8 @@ reports/*.json
 .env
 *.key
 *.pem
+
+# 로컬 자동 동기화
+auto_sync.bat
+logs/
+
