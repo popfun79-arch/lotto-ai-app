@@ -10,6 +10,12 @@ from lotto64.analysis.egr import egr_backtest
 from lotto64.analysis.gap import current_gap_table, gap_distribution
 from lotto64.analysis.similarity import similar_rounds
 from lotto64.analysis.state import cec_drc_backtest
+from lotto64.analysis.flow_pattern import (
+    analyze_flow_history,
+    next_round_flow_targets,
+    summarize_flow_statistics,
+)
+from lotto64.analysis.howard_guide import build_howard_summary
 from lotto64.analysis.sum_series import build_sum_series, compare_sum_windows, forecast_next_sum
 try:
     from lotto64.analysis.skip_pattern import (
@@ -75,9 +81,9 @@ except ImportError:
         "1~9", "10~19", "20~29", "30~39", "40~45"
     )
 
-st.set_page_config(page_title="Lotto64 v4.5.4 Skip Transition", page_icon="🍀", layout="wide")
-st.title("🍀 Lotto64 Ultimate AI v4.5 · Historical Validation Ledger")
-st.caption("데이터 · 합계 시계열 · GAP · 건너띔 합계/전이 · EGR · CEC/DRC · 회차 DNA · GA · Walk-forward")
+st.set_page_config(page_title="Lotto64 v4.5.5 Howard Flow", page_icon="🍀", layout="wide")
+st.title("🍀 Lotto64 Ultimate AI v4.5 · Gail Howard & Flow Patterns")
+st.caption("데이터 · 합계 시계열 · GAP · 건너띔 · Gail Howard 7대 분석 · 이웃/폭포/역폭포 흐름 · CEC/DRC · GA · Walk-forward")
 st.warning("로또는 무작위 추첨입니다. 이 앱은 당첨을 보장하지 않는 연구·검증 도구입니다.")
 
 with st.sidebar:
@@ -154,7 +160,7 @@ with st.spinner("통합 Final Pattern 엔진 계산 중..."):
 top_of_best_sets = build_top_of_best_sets(final_bundle["portfolio"])
 
 tabs = st.tabs([
-    "데이터 진단", "합계 시계열", "GAP·EGR", "건너띔 패턴", "CEC·DRC", "회차 DNA",
+    "데이터 진단", "합계 시계열", "GAP·EGR", "건너띔 패턴", "Gail Howard·흐름 패턴", "CEC·DRC", "회차 DNA",
     "후보 번호", "Top of the Best", "GA 최적화", "Walk-forward", "가중치 탐색",
     "설명", "Final Pattern", "검증 원장",
 ])
@@ -353,7 +359,174 @@ with tabs[3]:
         hide_index=True,
     )
 
+
 with tabs[4]:
+    st.subheader("Gail Howard 7대 분석 & 대각선 흐름(이웃·폭포·역폭포) 패턴")
+    st.caption(
+        "세계적인 복권 분석가 Gail Howard의 핵심 분석 이론(Games Out, Number Groups, "
+        "Last Digits, Odd-Even, High-Low, Hot/Cold, Sum Balance)과 "
+        "한국 로또에서 강력한 흐름을 보이는 대각선(이웃수 ±1, 폭포수 +1, 역폭포수 -1, 3연속 계단식) 패턴을 결합합니다."
+    )
+
+    howard_rep = build_howard_summary(analysis, window=50)
+
+    # 1. 상단 요약 카드 (7대 핵심 지표)
+    st.markdown("#### 🍀 Gail Howard 7대 핵심 분석 브리핑")
+    hc1, hc2, hc3, hc4 = st.columns(4)
+    hc1.metric("최근 홀짝 비율", howard_rep.latest_odd_even, help="통계적 밀집 구간: 3:3, 4:2, 2:4")
+    hc2.metric("최근 고저 비율", howard_rep.latest_high_low, help="저번호(1~22) vs 고번호(23~45)")
+    hc3.metric("최근 번호합", f"{howard_rep.latest_sum} (중심 {howard_rep.sum_target_center:.0f})")
+    hc4.metric("다음 합계 예측구간", f"{howard_rep.sum_target_low:.0f}~{howard_rep.sum_target_high:.0f}")
+
+    sk1, sk2, sk3, sk4 = st.columns(4)
+    sk1.metric("단기 미출수 (0~5회)", f"{howard_rep.short_skips_count}개")
+    sk2.metric("중기 미출수 (6~10회)", f"{howard_rep.mid_skips_count}개")
+    sk3.metric("장기 미출수 (11회+)", f"{howard_rep.long_skips_count}개")
+    sk4.metric("15회+ 냉각 번호", f"{len(howard_rep.cold_numbers_15plus)}개", help=f"번호: {howard_rep.cold_numbers_15plus}")
+
+    st.markdown("---")
+
+    # 2. 대각선 흐름(이웃, 폭포, 역폭포) 심층 분석
+    st.markdown("#### 🌊 대각선 흐름(이웃·폭포·역폭포) 실시간 타깃 분석")
+    st.caption(
+        f"직전({howard_rep.latest_round}회) 당첨번호: "
+        + " ".join(f"`{n}`" for n in howard_rep.latest_numbers)
+    )
+
+    fl_targets = howard_rep.flow_targets
+    fl_summary = howard_rep.flow_summary
+
+    fc1, fc2, fc3, fc4 = st.columns(4)
+    fc1.metric(
+        "이웃수(±1) 후보",
+        f"{len(fl_targets.neighbor_candidates)}개",
+        f"평균 {fl_summary['avg_neighbor_count']:.2f}개 출현",
+    )
+    fc2.metric(
+        "폭포수(+1) 후보",
+        f"{len(fl_targets.cascade_step2_candidates)}개",
+        f"평균 {fl_summary['avg_cascade_count']:.2f}개 출현",
+    )
+    fc3.metric(
+        "역폭포수(-1) 후보",
+        f"{len(fl_targets.reverse_step2_candidates)}개",
+        f"평균 {fl_summary['avg_reverse_cascade_count']:.2f}개 출현",
+    )
+    fc4.metric(
+        "이월수(Repeat) 후보",
+        f"{len(fl_targets.carryover_candidates)}개",
+        f"평균 {fl_summary['avg_carryover_count']:.2f}개 출현",
+    )
+
+    col_c3, col_r3 = st.columns(2)
+    with col_c3:
+        if fl_targets.cascade_step3_candidates:
+            st.success(
+                f"🔥 **3연속 폭포(+1) 완성 강력 타깃**: "
+                + ", ".join(f"**{n}번**" for n in fl_targets.cascade_step3_candidates)
+                + " (R-2 -> R-1 -> R 완성 대각선 흐름)"
+            )
+        else:
+            st.info("ℹ️ 현재 3연속 진행 중인 폭포 대각선 번호는 없습니다.")
+
+    with col_r3:
+        if fl_targets.reverse_step3_candidates:
+            st.warning(
+                f"⚡ **3연속 역폭포(-1) 완성 강력 타깃**: "
+                + ", ".join(f"**{n}번**" for n in fl_targets.reverse_step3_candidates)
+                + " (R-2 -> R-1 -> R 완성 역대각선 흐름)"
+            )
+        else:
+            st.info("ℹ️ 현재 3연속 진행 중인 역폭포 대각선 번호는 없습니다.")
+
+    t_col1, t_col2 = st.columns(2)
+    with t_col1:
+        st.markdown("**다음 회차 폭포수(+1 대각선) 타깃 번호**")
+        st.code(", ".join(map(str, fl_targets.cascade_step2_candidates)))
+        st.markdown("**다음 회차 역폭포수(-1 대각선) 타깃 번호**")
+        st.code(", ".join(map(str, fl_targets.reverse_step2_candidates)))
+
+    with t_col2:
+        st.markdown("**다음 회차 이웃수(±1 인접) 전체 후보군**")
+        st.code(", ".join(map(str, fl_targets.neighbor_candidates)))
+        st.markdown("**직전 회차 이월수(재출현) 후보군**")
+        st.code(", ".join(map(str, fl_targets.carryover_candidates)))
+
+    st.markdown("---")
+
+    # 3. 최근 회차 대각선 흐름 추적 매트릭스
+    st.markdown("#### 📊 최근 20회차 대각선 흐름 발생 이력")
+    flow_hist = analyze_flow_history(analysis.tail(25)).tail(20)
+    if not flow_hist.empty:
+        display_flow = flow_hist[
+            [
+                "round", "carryover_count", "carryover_numbers",
+                "neighbor_count", "neighbor_numbers",
+                "cascade_count", "cascade_numbers",
+                "reverse_cascade_count", "reverse_cascade_numbers",
+                "cascade_3step_count", "cascade_3step_numbers",
+                "reverse_cascade_3step_count", "reverse_cascade_3step_numbers",
+            ]
+        ].copy()
+        display_flow.columns = [
+            "회차", "이월수(개)", "이월 번호",
+            "이웃수(개)", "이웃 번호",
+            "폭포(+1)", "폭포 번호",
+            "역폭포(-1)", "역폭포 번호",
+            "3연속폭포", "3연속폭포 번호",
+            "3연속역폭포", "3연속역폭포 번호",
+        ]
+        st.dataframe(display_flow, use_container_width=True, hide_index=True)
+
+    # 4. 번호대 및 끝수 복원력 현황
+    st.markdown("---")
+    st.markdown("#### 🎯 번호대 5분할 및 끝수(Last Digits) 심층 현황")
+    b1, b2 = st.columns(2)
+    with b1:
+        st.markdown("**번호대별 최근 출현 및 멸구간(Missing Group)**")
+        if howard_rep.missing_groups_latest:
+            st.warning(f"최근 회차 멸(0개 출현) 구간: **{', '.join(howard_rep.missing_groups_latest)}**")
+        else:
+            st.success("최근 회차 전 번호대 고른 출현 (멸구간 없음)")
+        st.dataframe(
+            pd.DataFrame([
+                {"번호대": grp, "최근 회차 출현": howard_rep.group_counts_latest[grp], "최근 20회 누적": howard_rep.group_frequency_recent20[grp]}
+                for grp in NUMBER_GROUP_LABELS
+            ]),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with b2:
+        st.markdown("**끝수(0~9) 출현 및 동끝수(Pair) 현황**")
+        if howard_rep.same_digit_pairs_latest:
+            st.info(f"최근 회차 출현 동끝수: **끝수 {howard_rep.same_digit_pairs_latest}**")
+        else:
+            st.caption("최근 회차 모든 번호의 끝수가 서로 다름")
+        st.dataframe(
+            pd.DataFrame([
+                {"끝수": f"끝수 {d}", "최근 회차 출현": howard_rep.last_digit_counts_latest[d], "최근 20회 누적": howard_rep.digit_frequency_recent20[d]}
+                for d in range(10)
+            ]),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    # 5. Hot / Warm / Cold 리스트
+    st.markdown("---")
+    st.markdown("#### 🔥 Hot(과열) · ☕ Warm(보온) · ❄️ Cold(냉각) 번호 분류 (최근 20회 기준)")
+    hc_col1, hc_col2, hc_col3 = st.columns(3)
+    with hc_col1:
+        st.markdown(f"**🔥 Hot 번호 (4회 이상, 총 {len(howard_rep.hot_numbers)}개)**")
+        st.code(", ".join(map(str, howard_rep.hot_numbers)) if howard_rep.hot_numbers else "없음")
+    with hc_col2:
+        st.markdown(f"**☕ Warm 번호 (2~3회, 총 {len(howard_rep.warm_numbers)}개)**")
+        st.code(", ".join(map(str, howard_rep.warm_numbers)) if howard_rep.warm_numbers else "없음")
+    with hc_col3:
+        st.markdown(f"**❄️ Cold 번호 (0~1회, 총 {len(howard_rep.cold_numbers)}개)**")
+        st.code(", ".join(map(str, howard_rep.cold_numbers)) if howard_rep.cold_numbers else "없음")
+
+with tabs[5]:
     dna = build_dna(analysis)
     transitions = cec_drc_backtest(dna)
     cec = transitions[transitions["cec_event"]]
@@ -369,7 +542,7 @@ with tabs[4]:
     st.line_chart(states.set_index("round")[["gap_sum", "gap_sum_ma5", "gap_sum_ma10"]])
     st.dataframe(states.tail(60), use_container_width=True)
 
-with tabs[5]:
+with tabs[6]:
     dna = build_dna(analysis)
     st.dataframe(dna.tail(30), use_container_width=True)
     sim = similar_rounds(dna, similarity_k)
@@ -378,7 +551,7 @@ with tabs[5]:
     else:
         st.dataframe(sim, use_container_width=True)
 
-with tabs[6]:
+with tabs[7]:
     scores = number_scores(
         analysis,
         egr_threshold=egr_threshold,
@@ -396,7 +569,7 @@ with tabs[6]:
     st.dataframe(scores, use_container_width=True)
     st.download_button("번호 점수 다운로드", csv_bytes(scores), "number_scores.csv")
 
-with tabs[7]:
+with tabs[8]:
     st.subheader("🏆 Top of the Best")
     st.caption(
         "기존 안정형·균형형·공격형 3종 TOP20(최대 60개)을 사용하지 않습니다. "
@@ -470,7 +643,7 @@ with tabs[7]:
         "이월수 + 조합 간 중복/번호 노출 분산을 함께 반영합니다."
     )
 
-with tabs[8]:
+with tabs[9]:
     st.subheader("유전자 알고리즘 조합 최적화")
     st.caption(
         f"고정 기준 Seed = {FIXED_SEED}. 같은 데이터/설정이면 같은 "
@@ -607,7 +780,7 @@ with tabs[8]:
                 "number_seed_stability.csv",
             )
 
-with tabs[9]:
+with tabs[10]:
     st.subheader("Walk-forward 백테스트")
     st.caption(
         f"기본 백테스트는 고정 Seed {FIXED_SEED}를 사용해 재현성을 유지합니다."
@@ -754,7 +927,7 @@ with tabs[9]:
                 "walk_forward_multi_seed.csv",
             )
 
-with tabs[10]:
+with tabs[11]:
     st.subheader("가중치 확률적 탐색")
     trials = st.slider("탐색 횟수", 3, 20, 6)
 
@@ -787,7 +960,7 @@ with tabs[10]:
             "application/json",
         )
 
-with tabs[11]:
+with tabs[12]:
     st.subheader("번호 점수 설명")
     scores = number_scores(analysis, egr_threshold=egr_threshold, similarity_k=similarity_k)
     selected_number = st.selectbox("번호 선택", scores["number"].astype(int).tolist())
@@ -797,15 +970,16 @@ with tabs[11]:
     st.dataframe(explain_number(row), use_container_width=True)
 
 st.divider()
-st.caption("Lotto64 Ultimate AI v4.5.4 · Skip Sum Transition · 엄격 200회 Rolling Walk-forward")
+st.caption("Lotto64 Ultimate AI v4.5.5 · Gail Howard & Flow Patterns · 엄격 200회 Rolling Walk-forward")
 
 
 
-with tabs[12]:
-    st.subheader("Final Pattern — Python + Games-Out/Skip + 합계 시계열")
+with tabs[13]:
+    st.subheader("Final Pattern — Gail Howard & 대각선 흐름(이웃·폭포·역폭포) 결합 추천")
     st.caption(
         "Drawings Since Hit·Skip/Hit·Skips Due·Number Groups·Last Digits·"
-        "Odd/Even·High/Low 성격의 패턴과 Python 시계열/GAP/DNA를 결합합니다."
+        "Odd/Even·High/Low·Hot/Cold 및 이웃수/폭포수(+1)/역폭포수(-1) 패턴을 "
+        "Python 시계열/GAP/전이 모델과 결합합니다."
     )
 
     st.caption("Number Groups: " + " · ".join(NUMBER_GROUP_LABELS))
@@ -853,7 +1027,7 @@ with tabs[12]:
             )
 
 
-with tabs[13]:
+with tabs[14]:
     st.subheader("📒 Historical Validation Ledger")
     st.caption(
         "각 검증 회차의 실제 결과를 절대 학습에 포함하지 않고, "

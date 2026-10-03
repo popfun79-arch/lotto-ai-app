@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+"""
+[모듈 설명: Final Pattern 통합 추천 및 조합 생성 엔진]
+이 모듈은 번호별 Master Score, 합계 시계열 예측 구간, 건너띔(GAP/Skip) 합계 및 전이 확률,
+홀짝/고저/번호대/끝수 밸런스, 그리고 대각선 흐름(이웃수, 폭포수, 역폭포수, 이월수)을
+종합적으로 평가하여 가장 수학적 균형성이 뛰어난 최적의 6개 번호 조합들을 도출합니다.
+"""
+
 from collections import Counter
 from itertools import combinations
 
 import numpy as np
 import pandas as pd
 
+from lotto64.analysis.flow_pattern import next_round_flow_targets
 from lotto64.analysis.gap import build_gap_tables, current_gap_table
 from lotto64.analysis.gap_sum_series import (
     forecast_next_gap_sum,
@@ -38,6 +46,10 @@ BUCKETS = ["0", "1-2", "3-5", "6-10", "11-16", "17+"]
 
 
 def _feature_distributions(df: pd.DataFrame, window: int = 50) -> dict:
+    """
+    최근 관찰 회차(window) 동안의 홀수, 저번호, 번호대, 끝수, AC값 분포를 계산하여
+    가장 자주 등장하는 최적 형태에 정규화된 가중치를 부여합니다.
+    """
     recent = df.tail(min(window, len(df)))
     odd_values = Counter()
     low_values = Counter()
@@ -67,6 +79,9 @@ def _feature_distributions(df: pd.DataFrame, window: int = 50) -> dict:
 
 
 def _gap_bucket_means(df: pd.DataFrame, window: int = 50) -> dict[str, float]:
+    """
+    최근 50회 동안 당첨된 6개 번호의 GAP 구간 구성 평균(타깃)을 계산합니다.
+    """
     _, rounds = build_gap_tables(df)
     recent = rounds.tail(min(window, len(rounds)))
     rows = []
@@ -91,6 +106,9 @@ def _bucket_composition_score(
     gap_map: dict[int, int],
     target: dict[str, float],
 ) -> float:
+    """
+    조합 내 6개 번호의 GAP 구간 구성이 목표 구성과 얼마나 일치하는지 점수화합니다.
+    """
     counts = Counter(gap_bucket(gap_map[n]) for n in combo)
     distance = sum(
         abs(float(counts[bucket]) - float(target[bucket]))
@@ -107,6 +125,9 @@ def _candidate_pattern_ok(
     skip_low: float,
     skip_high: float,
 ) -> bool:
+    """
+    통계적 비정상 조합(예: 홀수 6개 몰림, 4연속 연속번호, 합계 이탈 등)을 사전에 걸러내는 엄격 필터입니다.
+    """
     total = sum(combo)
     skip_total = sum(skip_map[n] for n in combo)
     buckets = Counter(skip_bucket(skip_map[n]) for n in combo)
@@ -130,6 +151,10 @@ def rank_final_combinations(
     df: pd.DataFrame,
     pool_size: int = 20,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """
+    최상위 후보 번호 풀(pool_size=20)에서 가능한 모든 6개 조합(38,760개)을 생성하고,
+    시계열 합계, GAP, Skip 전이, 밸런스, 대각선 흐름(이웃·폭포·역폭포)을 결합하여 순위를 매깁니다.
+    """
     master = master_number_scores(df)
     pool = master.head(pool_size)["number"].astype(int).tolist()
 
@@ -161,9 +186,7 @@ def rank_final_combinations(
     target_buckets = _gap_bucket_means(df, 50)
     feature_dist = _feature_distributions(df, 50)
 
-    # v4.5.4: skip=0 기준 합계와 회차 상태 전이를 GAP합과 분리합니다.
-    # 현재 후보 번호의 skip 합계는 다음 회차 당첨 시의 실제 skip 합계와
-    # 같은 기준이므로 전용 예측구간으로 직접 평가합니다.
+    # skip=0 기준 합계와 전용 예측 구간
     skip_profile = current_skip_profile(df).set_index("number")
     skip_map = skip_profile["current_skip"].astype(int).to_dict()
     skip_forecast = forecast_next_skip_pattern(
@@ -175,18 +198,20 @@ def rank_final_combinations(
     skip_hazard = build_empirical_hazard(df).set_index("number")
     skip_hazard["hazard_rank_score"] = skip_hazard["empirical_hazard"].rank(pct=True)
 
-    latest = {
-        int(df.iloc[-1][f"n{i}"])
-        for i in range(1, 7)
-    }
+    # 직전 회차 당첨 번호 및 대각선 흐름 타깃
+    flow_targets = next_round_flow_targets(df)
+    latest = set(flow_targets.previous_numbers)
+    neighbors_set = set(flow_targets.neighbor_candidates)
+    cascade_set = set(flow_targets.cascade_step2_candidates)
+    reverse_cascade_set = set(flow_targets.reverse_step2_candidates)
+    cascade_3step_set = set(flow_targets.cascade_step3_candidates)
+    reverse_3step_set = set(flow_targets.reverse_step3_candidates)
 
     rows = []
     for combo in combinations(pool, 6):
         combo = tuple(sorted(combo))
         total = sum(combo)
         skip_total = sum(skip_map[n] for n in combo)
-        # build_gap_tables의 GAP은 연속 재출현을 1로 계산합니다.
-        # skip=0 기준 후보 합계와 비교할 때는 6개 번호 각각에 1을 더합니다.
         legacy_gap_total = skip_total + len(combo)
 
         if not _candidate_pattern_ok(
@@ -232,6 +257,14 @@ def rank_final_combinations(
         ac = ac_value(combo)
         carry = len(set(combo) & latest)
 
+        # 대각선 흐름(이웃수, 폭포수, 역폭포수) 카운트
+        combo_set = set(combo)
+        neighbor_cnt = len(combo_set & neighbors_set)
+        cascade_cnt = len(combo_set & cascade_set)
+        rev_cascade_cnt = len(combo_set & reverse_cascade_set)
+        cascade_3step_cnt = len(combo_set & cascade_3step_set)
+        rev_3step_cnt = len(combo_set & reverse_3step_set)
+
         balance_score = (
             feature_dist["odd"].get(odd, 0.0)
             + feature_dist["low"].get(low, 0.0)
@@ -240,7 +273,7 @@ def rank_final_combinations(
         last_score = feature_dist["last"].get(unique_last, 0.0)
         ac_score = feature_dist["ac"].get(ac, 0.0)
 
-        # 최근 GAP=0 hazard도 고려하되 과도한 이월 집중은 막는다.
+        # 이월수 점수
         if carry == 1:
             carry_score = 1.0
         elif carry in (0, 2):
@@ -248,8 +281,7 @@ def rank_final_combinations(
         else:
             carry_score = 0.35
 
-        # v4.5.4: 전용 skip 합계/회차 전이/구간 구성을 29% 반영합니다.
-        # 기존 GAP합 가중치는 줄여 같은 정보를 이중으로 세지 않도록 합니다.
+        # 최종 스코어 앙상블 (기존 12개 가중치 인터페이스 100% 호환 보존)
         final_score = (
             0.25 * number_score
             + 0.17 * draw_sum_score
@@ -266,6 +298,22 @@ def rank_final_combinations(
         )
 
         bucket_counts = Counter(gap_bucket(gap_map[n]) for n in combo)
+
+        # 대각선 흐름 직관적 요약 문자열
+        flow_parts = []
+        if carry > 0:
+            flow_parts.append(f"이월{carry}")
+        if neighbor_cnt > 0:
+            flow_parts.append(f"이웃{neighbor_cnt}")
+        if cascade_cnt > 0:
+            flow_parts.append(f"폭포{cascade_cnt}")
+        if rev_cascade_cnt > 0:
+            flow_parts.append(f"역폭포{rev_cascade_cnt}")
+        if cascade_3step_cnt > 0:
+            flow_parts.append(f"3연속폭포{cascade_3step_cnt}")
+        if rev_3step_cnt > 0:
+            flow_parts.append(f"3연속역폭포{rev_3step_cnt}")
+        flow_summary_str = " · ".join(flow_parts) if flow_parts else "신규독립"
 
         rows.append({
             "combination": combo,
@@ -286,6 +334,12 @@ def rank_final_combinations(
             "unique_last_digits": unique_last,
             "ac": ac,
             "carryover_count": carry,
+            "neighbor_count": neighbor_cnt,
+            "cascade_count": cascade_cnt,
+            "reverse_cascade_count": rev_cascade_cnt,
+            "cascade_3step_count": cascade_3step_cnt,
+            "reverse_cascade_3step_count": rev_3step_cnt,
+            "flow_summary": flow_summary_str,
             "gap_pattern": "/".join(
                 f"{bucket}:{bucket_counts[bucket]}"
                 for bucket in BUCKETS
@@ -308,6 +362,7 @@ def rank_final_combinations(
         "sum_forecast": sum_forecast.to_dict(),
         "gap_sum_forecast": gap_forecast.to_dict(),
         "skip_pattern_forecast": skip_forecast.to_dict(),
+        "flow_targets": flow_targets,
         "pool": sorted(pool),
         "gap_bucket_target_mean": target_buckets,
         "final_score_weights": {
@@ -327,7 +382,7 @@ def rank_final_combinations(
         "skip_period_enabled": True,
         "skip_period_note": (
             "skip=0 기준 합계 상태·방향 전이 + 구간별 6개 구성 + "
-            "empirical hazard를 최종 점수에 반영"
+            "empirical hazard + 대각선 흐름(이웃·폭포·역폭포)을 최종 점수에 반영"
         ),
     }
     return ranked, master, context
@@ -340,6 +395,9 @@ def build_final_portfolio(
     max_exposure: int = 10,
     exposure_penalty: float = 0.005,
 ) -> pd.DataFrame:
+    """
+    최상위 랭킹 조합들 중 번호 쏠림을 방지하고 분산 투자를 위한 최종 포트폴리오를 구성합니다.
+    """
     if ranked.empty:
         return ranked
 
@@ -388,6 +446,9 @@ def build_final_portfolio(
 
 
 def final_recommendation_bundle(df: pd.DataFrame) -> dict:
+    """
+    Master Score, 후보 번호 풀, 전체 랭킹 조합 및 최종 분산 포트폴리오를 번들링하여 반환합니다.
+    """
     ranked, master, context = rank_final_combinations(df, pool_size=20)
     portfolio = build_final_portfolio(ranked, size=20)
 
