@@ -281,20 +281,32 @@ def rank_final_combinations(
         else:
             carry_score = 0.35
 
-        # 최종 스코어 앙상블 (기존 12개 가중치 인터페이스 100% 호환 보존)
+        # 최종 스코어 앙상블 [추천안 1] 균형형 가중치 체계 (합계 1.00 / 100%)
+        # - 1. 마스터 번호 점수: Gail Howard 7대 분석 + 대각선 흐름 (25%)
+        # - 2. 번호 총합 시계열 적합도: 6개 번호 총합 전이 상태 (14%)
+        # - 3. 건너띔 합계 전이 점수: skip=0 기준 합계 상태·방향 전이 (14%)
+        # - 4. 건너띔 위험율 (Hazard): 과거 위험율 기반 점수 (6%)
+        # - 5. 건너띔 기간 구간 일치도: 6개 번호의 건너띔 버킷 분포 (6%)
+        # - 6. GAP 구간 구성 일치도: 6개 번호의 GAP 버킷 분포 (4%)
+        # - 7. GAP합 패턴 점수: 과거 GAP 총합 시계열 예측 구간 (7%)
+        # - 8. 홀짝/고저 패턴 밸런스 점수: 3:3, 4:2 균형 (6%)
+        # - 9. 당첨공색 분석 점수: 5개 색상 대역(노랑/파랑/빨강/회색/녹색) 분산 (5%)
+        # - 10. 당첨그림 분석 점수: AC값 및 번호판 매트릭스 산포 복잡도 (5%)
+        # - 11. 이월현황 점수: 직전 회차 당첨번호 1~2개 이월 (5%)
+        # - 12. 끝수 분산 점수: 0~9 끝자리 고른 분포 (3%)
         final_score = (
-            0.25 * number_score
-            + 0.17 * draw_sum_score
-            + 0.08 * gap_total_score
-            + 0.06 * bucket_score
-            + 0.14 * skip_total_score
-            + 0.10 * skip_period_score
-            + 0.05 * skip_hazard_score_value
-            + 0.05 * balance_score
-            + 0.03 * zone_score
-            + 0.02 * last_score
-            + 0.02 * ac_score
-            + 0.03 * carry_score
+            0.25 * number_score              # 1. 마스터 번호 점수 (25%)
+            + 0.14 * draw_sum_score          # 2. 번호 총합 시계열 (14%)
+            + 0.14 * skip_total_score        # 3. 건너띔 합계 전이 (14%)
+            + 0.06 * skip_hazard_score_value # 4. 건너띔 위험율 (6%)
+            + 0.06 * skip_period_score       # 5. 건너띔 구간 일치 (6%)
+            + 0.04 * bucket_score            # 6. GAP 구간 구성 (4%)
+            + 0.07 * gap_total_score         # 7. GAP합 패턴 (7%)
+            + 0.06 * balance_score           # 8. 홀짝/고저 밸런스 (6%)
+            + 0.05 * zone_score              # 9. 당첨공색 분석 (5%)
+            + 0.05 * ac_score                # 10. 당첨그림 분석 (5%)
+            + 0.05 * carry_score             # 11. 이월현황 (5%)
+            + 0.03 * last_score              # 12. 끝수 분산 (3%)
         )
 
         bucket_counts = Counter(gap_bucket(gap_map[n]) for n in combo)
@@ -366,23 +378,23 @@ def rank_final_combinations(
         "pool": sorted(pool),
         "gap_bucket_target_mean": target_buckets,
         "final_score_weights": {
-            "number": 0.25,
-            "number_sum": 0.17,
-            "legacy_gap_sum": 0.08,
-            "gap_bucket": 0.06,
-            "skip_sum_transition": 0.14,
-            "skip_bucket_transition": 0.10,
-            "skip_empirical_hazard": 0.05,
-            "balance": 0.05,
-            "zone": 0.03,
-            "last_digit": 0.02,
-            "ac": 0.02,
-            "carry": 0.03,
+            "number": 0.25,                  # 1. 마스터 번호 점수 (25%)
+            "number_sum": 0.14,              # 2. 번호 총합 시계열 (14%)
+            "skip_sum_transition": 0.14,     # 3. 건너띔 합계 전이 (14%)
+            "skip_empirical_hazard": 0.06,   # 4. 건너띔 위험율 (6%)
+            "skip_bucket_transition": 0.06,  # 5. 건너띔 구간 일치 (6%)
+            "gap_bucket": 0.04,              # 6. GAP 구간 구성 (4%)
+            "legacy_gap_sum": 0.07,          # 7. GAP합 패턴 (7%)
+            "balance": 0.06,                 # 8. 홀짝/고저 밸런스 (6%)
+            "zone": 0.05,                    # 9. 당첨공색 분석 (5%)
+            "ac": 0.05,                      # 10. 당첨그림 분석 (5%)
+            "carry": 0.05,                   # 11. 이월현황 (5%)
+            "last_digit": 0.03,              # 12. 끝수 분산 (3%)
         },
         "skip_period_enabled": True,
         "skip_period_note": (
-            "skip=0 기준 합계 상태·방향 전이 + 구간별 6개 구성 + "
-            "empirical hazard + 대각선 흐름(이웃·폭포·역폭포)을 최종 점수에 반영"
+            "skip=0 기준 합계 상태·방향 전이 + 당첨공색(5%)·당첨그림(5%)·이월(5%) + "
+            "empirical hazard + 대각선 흐름(이웃·폭포·역폭포)을 균형형 가중치로 최종 점수에 반영"
         ),
     }
     return ranked, master, context
